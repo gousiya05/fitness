@@ -152,15 +152,26 @@ app.post("/api/food/scan", authenticate, upload.single('image'), async (req: any
 
     const response = await result.response;
     const text = response.text();
-    const cleanJson = text.replace(/```json|```/g, "").trim();
-    const nutritionData = JSON.parse(cleanJson);
+    
+    // Robust JSON extraction
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.error("No JSON found in AI response:", text);
+      throw new Error("Invalid AI response format");
+    }
+    
+    const nutritionData = JSON.parse(jsonMatch[0]);
 
     // Save to history if Firestore is active
     if (USE_FIRESTORE) {
-      await db.collection('users').doc(req.userId).collection('scans').add({
-        ...nutritionData,
-        timestamp: new Date().toISOString()
-      });
+      try {
+        await db.collection('users').doc(req.userId).collection('scans').add({
+          ...nutritionData,
+          timestamp: new Date().toISOString()
+        });
+      } catch (dbErr) {
+        console.error("Failed to save scan to Firestore:", dbErr);
+      }
     }
 
     res.json(nutritionData);

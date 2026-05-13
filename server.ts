@@ -98,9 +98,15 @@ async function startServer() {
       const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
       const prompt = `Analyze this food image and provide detailed nutritional information. Return strict JSON: { "foodItems": [{"name":"string","calories":number,"protein":"string","carbs":"string","fat":"string","fiber":"string","sugar":"string","portion":"string"}], "totalCalories": number, "recommendation": "string", "isHealthy": boolean }`;
       const result = await model.generateContent([prompt, { inlineData: { data: req.file.buffer.toString("base64"), mimeType: req.file.mimetype } }]);
-      const text = (await result.response).text().replace(/```json|```/g, "").trim();
-      const data = JSON.parse(text);
-      if (USE_FIRESTORE) await db.collection('users').doc(req.userId).collection('scans').add({ ...data, timestamp: new Date().toISOString() });
+      const text = (await result.response).text();
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error("Invalid AI response");
+      const data = JSON.parse(jsonMatch[0]);
+      if (USE_FIRESTORE) {
+        try {
+          await db.collection('users').doc(req.userId).collection('scans').add({ ...data, timestamp: new Date().toISOString() });
+        } catch (e) {}
+      }
       res.json(data);
     } catch (error: any) { res.status(500).json({ error: "Analysis failed" }); }
   });
