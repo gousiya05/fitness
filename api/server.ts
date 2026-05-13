@@ -45,6 +45,19 @@ function getAiClient() {
   return aiClient;
 }
 
+// Auth Middleware
+const authenticate = (req: any, res: any, next: any) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    req.userId = decoded.userId;
+    next();
+  } catch (err) {
+    res.status(401).json({ error: "Invalid token" });
+  }
+};
+
 // Auth Routes
 app.post("/api/auth/register", async (req, res) => {
   try {
@@ -63,7 +76,7 @@ app.post("/api/auth/register", async (req, res) => {
       // Mock Register
       if (mockUsers.find(u => u.email === email)) return res.status(400).json({ error: "User already exists" });
       const user = { _id: Date.now().toString(), email, firstName, lastName, onboarded: false };
-      mockUsers.push({ ...user, password }); // In real world, hash this
+      mockUsers.push({ ...user, password });
       const token = jwt.sign({ userId: user._id }, JWT_SECRET);
       res.json({ token, user });
     }
@@ -95,6 +108,37 @@ app.post("/api/auth/login", async (req, res) => {
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
+});
+
+app.get("/api/user/profile", authenticate, async (req: any, res) => {
+  try {
+    if (MONGODB_URI) {
+      const user = await User.findById(req.userId);
+      if (!user) return res.status(404).json({ error: "User not found" });
+      res.json(user);
+    } else {
+      const user = mockUsers.find(u => u._id === req.userId);
+      res.json(user);
+    }
+  } catch (error: any) { res.status(500).json({ error: error.message }); }
+});
+
+app.post("/api/user/profile", authenticate, async (req: any, res) => {
+  try {
+    const profileData = req.body;
+    if (MONGODB_URI) {
+      const user = await User.findByIdAndUpdate(req.userId, { ...profileData, onboarded: true }, { new: true });
+      res.json(user);
+    } else {
+      const index = mockUsers.findIndex(u => u._id === req.userId);
+      if (index !== -1) {
+        mockUsers[index] = { ...mockUsers[index], ...profileData, onboarded: true };
+        res.json(mockUsers[index]);
+      } else {
+        res.status(404).json({ error: "User not found" });
+      }
+    }
+  } catch (error: any) { res.status(500).json({ error: error.message }); }
 });
 
 // Health check

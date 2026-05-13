@@ -8,6 +8,17 @@ export interface IUser extends Document {
   photoURL: string;
   onboarded: boolean;
   createdAt: Date;
+  
+  // Profile Data
+  age?: number;
+  gender?: string;
+  height?: number;
+  weight?: number;
+  fitnessGoal?: string;
+  activityLevel?: string;
+  dietPreference?: string;
+  allergies?: string;
+  workoutExperience?: string;
 }
 
 const UserSchema = new mongoose.Schema({
@@ -18,6 +29,17 @@ const UserSchema = new mongoose.Schema({
   photoURL: { type: String, default: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=200&h=200&auto=format&fit=crop' },
   onboarded: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
+  
+  // Profile Data
+  age: { type: Number },
+  gender: { type: String },
+  height: { type: Number },
+  weight: { type: Number },
+  fitnessGoal: { type: String },
+  activityLevel: { type: String },
+  dietPreference: { type: String },
+  allergies: { type: String },
+  workoutExperience: { type: String },
 });
 
 export const User: Model<IUser> = mongoose.models.User || mongoose.model<IUser>('User', UserSchema);

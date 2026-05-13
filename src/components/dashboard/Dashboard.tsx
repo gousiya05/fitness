@@ -67,12 +67,35 @@ export default function Dashboard() {
   const [metrics, setMetrics] = React.useState<BodyMetrics | null>(null);
 
   React.useEffect(() => {
-    const stored = localStorage.getItem('userProfile');
-    if (stored) {
-      const p = JSON.parse(stored) as UserProfile;
-      setProfile(p);
-      setMetrics(calculateMetrics(p));
-    }
+    const fetchProfile = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        const response = await fetch('/api/user/profile', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+          const p = await response.json() as UserProfile;
+          setProfile(p);
+          setMetrics(calculateMetrics(p));
+          localStorage.setItem('userProfile', JSON.stringify(p));
+        } else {
+          // Fallback to local storage if API fails
+          const stored = localStorage.getItem('userProfile');
+          if (stored) {
+            const p = JSON.parse(stored) as UserProfile;
+            setProfile(p);
+            setMetrics(calculateMetrics(p));
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch profile:", err);
+      }
+    };
+
+    fetchProfile();
   }, []);
 
   const stats = [

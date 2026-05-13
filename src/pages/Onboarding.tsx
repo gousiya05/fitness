@@ -59,16 +59,31 @@ export default function Onboarding() {
     }
   };
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
     setIsGenerating(true);
-    // Simulate complex AI analysis
-    setTimeout(() => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/user/profile', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(profile),
+      });
+
+      if (!response.ok) throw new Error('Failed to synchronize profile');
+      
       localStorage.setItem('userProfile', JSON.stringify(profile));
       localStorage.setItem('onboarded', 'true');
-      setIsGenerating(false);
+      
       toast.success("Neural Integration Complete.");
       navigate('/dashboard');
-    }, 3000);
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   if (isGenerating) {
