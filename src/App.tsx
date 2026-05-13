@@ -16,9 +16,10 @@ import { Toaster } from '@/components/ui/sonner';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const user = localStorage.getItem('user');
+  const token = localStorage.getItem('token');
   const onboarded = localStorage.getItem('onboarded');
   
-  if (!user) return <Navigate to="/auth" replace />;
+  if (!user || !token) return <Navigate to="/auth" replace />;
   if (!onboarded && window.location.pathname !== '/onboarding') {
     return <Navigate to="/onboarding" replace />;
   }

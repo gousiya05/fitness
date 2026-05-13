@@ -10,18 +10,39 @@ import { toast } from 'sonner';
 
 export default function Auth() {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
 
-  const handleAuth = (e: React.FormEvent) => {
+  const handleAuth = async (e: React.FormEvent, type: 'login' | 'register') => {
     e.preventDefault();
     setLoading(true);
-    setTimeout(() => {
+    try {
+      const endpoint = type === 'login' ? '/api/auth/login' : '/api/auth/register';
+      const body = type === 'login' ? { email, password } : { email, password, firstName, lastName };
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) throw new Error(data.error || 'Authentication failed');
+      
+      localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify({
-        displayName: 'John Doe',
-        email: 'john@example.com',
+        displayName: `${data.user.firstName} ${data.user.lastName}`.trim() || data.user.email,
+        email: data.user.email,
         photoURL: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=200&h=200&auto=format&fit=crop',
       }));
-      setLoading(false);
+      
+      if (data.user.onboarded) {
+        localStorage.setItem('onboarded', 'true');
+      }
+
       window.dispatchEvent(new Event('auth-change'));
       
       const onboarded = localStorage.getItem('onboarded');
@@ -31,8 +52,12 @@ export default function Auth() {
         navigate('/onboarding');
       }
       
-      toast.success("Identity Verified. Access Granted.");
-    }, 1500);
+      toast.success(type === 'login' ? "Access Granted." : "Profile Created.");
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -71,15 +96,28 @@ export default function Auth() {
                   <CardDescription className="text-white/30 font-medium text-xs uppercase tracking-widest">Verify biometric credentials</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <form onSubmit={handleAuth} className="space-y-6">
+                    <form onSubmit={(e) => handleAuth(e, 'login')} className="space-y-6">
                     <div className="space-y-4">
                       <div className="relative group">
                         <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-primary transition-colors" size={18} />
-                        <Input placeholder="AUTHORIZED_EMAIL" className="h-14 pl-12 glass border-transparent focus:border-primary/50 rounded-2xl font-bold tracking-tight" required />
+                        <Input 
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          placeholder="AUTHORIZED_EMAIL" 
+                          className="h-14 pl-12 glass border-transparent focus:border-primary/50 rounded-2xl font-bold tracking-tight" 
+                          required 
+                        />
                       </div>
                       <div className="relative group">
                         <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-primary transition-colors" size={18} />
-                        <Input type="password" placeholder="SECURE_PHRASE" className="h-14 pl-12 glass border-transparent focus:border-primary/50 rounded-2xl font-bold tracking-tight" required />
+                        <Input 
+                          type="password" 
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="SECURE_PHRASE" 
+                          className="h-14 pl-12 glass border-transparent focus:border-primary/50 rounded-2xl font-bold tracking-tight" 
+                          required 
+                        />
                       </div>
                     </div>
                     <Button type="submit" disabled={loading} className="w-full h-16 bg-primary text-black hover:bg-white rounded-[1.5rem] font-black uppercase italic tracking-tighter text-lg shadow-xl neon-glow">
@@ -108,13 +146,39 @@ export default function Auth() {
                   <CardDescription className="text-white/30 font-medium text-xs uppercase tracking-widest">Enroll in neural system</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <form onSubmit={handleAuth} className="space-y-6">
+                  <form onSubmit={(e) => handleAuth(e, 'register')} className="space-y-6">
                     <div className="grid grid-cols-2 gap-4">
-                      <Input placeholder="ALIAS_FIRST" className="h-14 glass border-transparent focus:border-primary/50 rounded-2xl font-bold" required />
-                      <Input placeholder="ALIAS_LAST" className="h-14 glass border-transparent focus:border-primary/50 rounded-2xl font-bold" required />
+                      <Input 
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                        placeholder="ALIAS_FIRST" 
+                        className="h-14 glass border-transparent focus:border-primary/50 rounded-2xl font-bold" 
+                        required 
+                      />
+                      <Input 
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        placeholder="ALIAS_LAST" 
+                        className="h-14 glass border-transparent focus:border-primary/50 rounded-2xl font-bold" 
+                        required 
+                      />
                     </div>
-                    <Input placeholder="IDENTIFICATION_EMAIL" className="h-14 glass border-transparent focus:border-primary/50 rounded-2xl font-bold" type="email" required />
-                    <Input placeholder="PASSPHRASE" className="h-14 glass border-transparent focus:border-primary/50 rounded-2xl font-bold" type="password" required />
+                    <Input 
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="IDENTIFICATION_EMAIL" 
+                      className="h-14 glass border-transparent focus:border-primary/50 rounded-2xl font-bold" 
+                      type="email" 
+                      required 
+                    />
+                    <Input 
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="PASSPHRASE" 
+                      className="h-14 glass border-transparent focus:border-primary/50 rounded-2xl font-bold" 
+                      type="password" 
+                      required 
+                    />
                     <Button type="submit" disabled={loading} className="w-full h-16 bg-primary text-black hover:bg-white rounded-[1.5rem] font-black uppercase italic tracking-tighter text-lg shadow-xl neon-glow">
                       {loading ? <Sparkles className="animate-spin mr-2" size={20} /> : <UserPlus className="mr-2" size={20} />}
                       Commit Profile
