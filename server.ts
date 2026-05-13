@@ -1,22 +1,21 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { User } from "./api/models/User";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import { db } from "./api/lib/firebase";
 
 dotenv.config();
 
 const JWT_SECRET = process.env.JWT_SECRET || "flexai-secret-key-2026";
-const MONGODB_URI = process.env.MONGODB_URI;
+const USE_FIRESTORE = process.env.FIREBASE_PROJECT_ID || process.env.FIREBASE_SERVICE_ACCOUNT;
 
-if (MONGODB_URI) {
-  mongoose.connect(MONGODB_URI)
-    .then(() => console.log("MongoDB Connected"))
-    .catch(err => console.error("MongoDB Connection Error:", err));
+if (USE_FIRESTORE) {
+  console.log("Firebase Firestore Integrated (Local)");
+} else {
+  console.warn("Firebase config missing. Auth will use in-memory mock for now.");
 }
 
 // In-memory mock store for when DB is missing
@@ -61,78 +60,85 @@ async function startServer() {
 
   app.use(express.json());
 
-// Auth Routes
-app.post("/api/auth/register", async (req, res) => {
-  try {
-    const { email, password, firstName, lastName } = req.body;
-    if (MONGODB_URI) {
-      const existing = await User.findOne({ email });
-      if (existing) return res.status(400).json({ error: "User already exists" });
-      const hashedPassword = await bcrypt.hash(password, 10);
-      const user = await User.create({ email, password: hashedPassword, firstName, lastName });
-      const token = jwt.sign({ userId: user._id }, JWT_SECRET);
-      res.json({ token, user: { email: user.email, firstName: user.firstName, lastName: user.lastName, onboarded: user.onboarded } });
-    } else {
-      if (mockUsers.find(u => u.email === email)) return res.status(400).json({ error: "User already exists" });
-      const user = { _id: Date.now().toString(), email, firstName, lastName, onboarded: false };
-      mockUsers.push({ ...user, password });
-      const token = jwt.sign({ userId: user._id }, JWT_SECRET);
-      res.json({ token, user });
-    }
-  } catch (error: any) { res.status(500).json({ error: error.message }); }
-});
-
-app.post("/api/auth/login", async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    if (MONGODB_URI) {
-      const user = await User.findOne({ email });
-      if (!user) return res.status(400).json({ error: "User not found" });
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) return res.status(400).json({ error: "Invalid credentials" });
-      const token = jwt.sign({ userId: user._id }, JWT_SECRET);
-      res.json({ token, user: { email: user.email, firstName: user.firstName, lastName: user.lastName, onboarded: user.onboarded } });
-    } else {
-      const user = mockUsers.find(u => u.email === email && u.password === password);
-      if (!user) return res.status(400).json({ error: "Invalid credentials" });
-      const token = jwt.sign({ userId: user._id }, JWT_SECRET);
-      res.json({ token, user: { email: user.email, firstName: user.firstName, lastName: user.lastName, onboarded: user.onboarded } });
-    }
-  } catch (error: any) { res.status(500).json({ error: error.message }); }
-});
-
-app.get("/api/user/profile", authenticate, async (req: any, res) => {
-  try {
-    if (MONGODB_URI) {
-      const user = await User.findById(req.userId);
-      if (!user) return res.status(404).json({ error: "User not found" });
-      res.json(user);
-    } else {
-      const user = mockUsers.find(u => u._id === req.userId);
-      res.json(user);
-    }
-  } catch (error: any) { res.status(500).json({ error: error.message }); }
-});
-
-app.post("/api/user/profile", authenticate, async (req: any, res) => {
-  try {
-    const profileData = req.body;
-    if (MONGODB_URI) {
-      const user = await User.findByIdAndUpdate(req.userId, { ...profileData, onboarded: true }, { new: true });
-      res.json(user);
-    } else {
-      const index = mockUsers.findIndex(u => u._id === req.userId);
-      if (index !== -1) {
-        mockUsers[index] = { ...mockUsers[index], ...profileData, onboarded: true };
-        res.json(mockUsers[index]);
+  // Auth Routes
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const { email, password, firstName, lastName } = req.body;
+      if (USE_FIRESTORE) {
+        const userRef = db.collection('users').doc(email);
+        const doc = await userRef.get();
+        if (doc.exists) return res.status(400).json({ error: "User already exists" });
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const userData = { email, password: hashedPassword, firstName, lastName, onboarded: false, createdAt: new Date().toISOString() };
+        await userRef.set(userData);
+        const token = jwt.sign({ userId: email }, JWT_SECRET);
+        res.json({ token, user: { email, firstName, lastName, onboarded: false } });
       } else {
-        res.status(404).json({ error: "User not found" });
+        if (mockUsers.find(u => u.email === email)) return res.status(400).json({ error: "User already exists" });
+        const user = { _id: Date.now().toString(), email, firstName, lastName, onboarded: false };
+        mockUsers.push({ ...user, password });
+        const token = jwt.sign({ userId: user._id }, JWT_SECRET);
+        res.json({ token, user });
       }
-    }
-  } catch (error: any) { res.status(500).json({ error: error.message }); }
-});
+    } catch (error: any) { res.status(500).json({ error: error.message }); }
+  });
 
-// Health check
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      if (USE_FIRESTORE) {
+        const userRef = db.collection('users').doc(email);
+        const doc = await userRef.get();
+        if (!doc.exists) return res.status(400).json({ error: "User not found" });
+        const user = doc.data()!;
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) return res.status(400).json({ error: "Invalid credentials" });
+        const token = jwt.sign({ userId: email }, JWT_SECRET);
+        res.json({ token, user: { email: user.email, firstName: user.firstName, lastName: user.lastName, onboarded: user.onboarded, age: user.age, height: user.height, weight: user.weight, fitnessGoal: user.fitnessGoal } });
+      } else {
+        const user = mockUsers.find(u => u.email === email && u.password === password);
+        if (!user) return res.status(400).json({ error: "Invalid credentials" });
+        const token = jwt.sign({ userId: user._id }, JWT_SECRET);
+        res.json({ token, user: { email: user.email, firstName: user.firstName, lastName: user.lastName, onboarded: user.onboarded } });
+      }
+    } catch (error: any) { res.status(500).json({ error: error.message }); }
+  });
+
+  app.get("/api/user/profile", authenticate, async (req: any, res) => {
+    try {
+      if (USE_FIRESTORE) {
+        const userRef = db.collection('users').doc(req.userId);
+        const doc = await userRef.get();
+        if (!doc.exists) return res.status(404).json({ error: "User not found" });
+        res.json(doc.data());
+      } else {
+        const user = mockUsers.find(u => u._id === req.userId || u.email === req.userId);
+        res.json(user);
+      }
+    } catch (error: any) { res.status(500).json({ error: error.message }); }
+  });
+
+  app.post("/api/user/profile", authenticate, async (req: any, res) => {
+    try {
+      const profileData = req.body;
+      if (USE_FIRESTORE) {
+        const userRef = db.collection('users').doc(req.userId);
+        await userRef.update({ ...profileData, onboarded: true });
+        const updated = await userRef.get();
+        res.json(updated.data());
+      } else {
+        const index = mockUsers.findIndex(u => u._id === req.userId || u.email === req.userId);
+        if (index !== -1) {
+          mockUsers[index] = { ...mockUsers[index], ...profileData, onboarded: true };
+          res.json(mockUsers[index]);
+        } else {
+          res.status(404).json({ error: "User not found" });
+        }
+      }
+    } catch (error: any) { res.status(500).json({ error: error.message }); }
+  });
+
+  // Health check
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
@@ -142,16 +148,11 @@ app.post("/api/user/profile", authenticate, async (req: any, res) => {
     try {
       const { prompt, systemInstruction } = req.body;
       const ai = getAiClient();
-      
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: prompt,
-        config: {
-          systemInstruction: systemInstruction || "You are a fitness expert.",
-          responseMimeType: "application/json",
-        },
+        config: { systemInstruction: systemInstruction || "You are a fitness expert.", responseMimeType: "application/json" },
       });
-      
       res.json({ text: response.text });
     } catch (error: any) {
       console.error("Gemini Error:", error);
@@ -161,17 +162,12 @@ app.post("/api/user/profile", authenticate, async (req: any, res) => {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
+    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
+    app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
   }
 
   app.listen(PORT, "0.0.0.0", () => {

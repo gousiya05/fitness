@@ -1,10 +1,9 @@
 import express from "express";
-import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { User } from "./models/User";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import { db } from "./lib/firebase";
 
 dotenv.config();
 
@@ -12,14 +11,12 @@ const app = express();
 app.use(express.json());
 
 const JWT_SECRET = process.env.JWT_SECRET || "flexai-secret-key-2026";
-const MONGODB_URI = process.env.MONGODB_URI;
+const USE_FIRESTORE = process.env.FIREBASE_PROJECT_ID || process.env.FIREBASE_SERVICE_ACCOUNT;
 
-if (MONGODB_URI) {
-  mongoose.connect(MONGODB_URI)
-    .then(() => console.log("MongoDB Connected"))
-    .catch(err => console.error("MongoDB Connection Error:", err));
+if (USE_FIRESTORE) {
+  console.log("Firebase Firestore Integrated");
 } else {
-  console.warn("MONGODB_URI not found. Auth will use in-memory mock for now.");
+  console.warn("Firebase config missing. Auth will use in-memory mock for now.");
 }
 
 // In-memory mock store for when DB is missing
@@ -63,17 +60,28 @@ app.post("/api/auth/register", async (req, res) => {
   try {
     const { email, password, firstName, lastName } = req.body;
     
-    if (MONGODB_URI) {
-      const existing = await User.findOne({ email });
-      if (existing) return res.status(400).json({ error: "User already exists" });
+    if (USE_FIRESTORE) {
+      const userRef = db.collection('users').doc(email);
+      const doc = await userRef.get();
+      
+      if (doc.exists) return res.status(400).json({ error: "User already exists" });
       
       const hashedPassword = await bcrypt.hash(password, 10);
-      const user = await User.create({ email, password: hashedPassword, firstName, lastName });
+      const userData = {
+        email,
+        password: hashedPassword,
+        firstName,
+        lastName,
+        photoURL: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=200&h=200&auto=format&fit=crop',
+        onboarded: false,
+        createdAt: new Date().toISOString()
+      };
       
-      const token = jwt.sign({ userId: user._id }, JWT_SECRET);
-      res.json({ token, user: { email: user.email, firstName: user.firstName, lastName: user.lastName, onboarded: user.onboarded } });
+      await userRef.set(userData);
+      
+      const token = jwt.sign({ userId: email }, JWT_SECRET);
+      res.json({ token, user: { email, firstName, lastName, onboarded: false } });
     } else {
-      // Mock Register
       if (mockUsers.find(u => u.email === email)) return res.status(400).json({ error: "User already exists" });
       const user = { _id: Date.now().toString(), email, firstName, lastName, onboarded: false };
       mockUsers.push({ ...user, password });
@@ -89,17 +97,32 @@ app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body;
     
-    if (MONGODB_URI) {
-      const user = await User.findOne({ email });
-      if (!user) return res.status(400).json({ error: "User not found" });
+    if (USE_FIRESTORE) {
+      const userRef = db.collection('users').doc(email);
+      const doc = await userRef.get();
       
+      if (!doc.exists) return res.status(400).json({ error: "User not found" });
+      
+      const user = doc.data()!;
       const isMatch = await bcrypt.compare(password, user.password);
       if (!isMatch) return res.status(400).json({ error: "Invalid credentials" });
       
-      const token = jwt.sign({ userId: user._id }, JWT_SECRET);
-      res.json({ token, user: { email: user.email, firstName: user.firstName, lastName: user.lastName, onboarded: user.onboarded } });
+      const token = jwt.sign({ userId: email }, JWT_SECRET);
+      res.json({ 
+        token, 
+        user: { 
+          email: user.email, 
+          firstName: user.firstName, 
+          lastName: user.lastName, 
+          onboarded: user.onboarded,
+          // Include other profile data if it exists
+          age: user.age,
+          height: user.height,
+          weight: user.weight,
+          fitnessGoal: user.fitnessGoal
+        } 
+      });
     } else {
-      // Mock Login
       const user = mockUsers.find(u => u.email === email && u.password === password);
       if (!user) return res.status(400).json({ error: "Invalid credentials" });
       const token = jwt.sign({ userId: user._id }, JWT_SECRET);
@@ -112,12 +135,13 @@ app.post("/api/auth/login", async (req, res) => {
 
 app.get("/api/user/profile", authenticate, async (req: any, res) => {
   try {
-    if (MONGODB_URI) {
-      const user = await User.findById(req.userId);
-      if (!user) return res.status(404).json({ error: "User not found" });
-      res.json(user);
+    if (USE_FIRESTORE) {
+      const userRef = db.collection('users').doc(req.userId);
+      const doc = await userRef.get();
+      if (!doc.exists) return res.status(404).json({ error: "User not found" });
+      res.json(doc.data());
     } else {
-      const user = mockUsers.find(u => u._id === req.userId);
+      const user = mockUsers.find(u => u._id === req.userId || u.email === req.userId);
       res.json(user);
     }
   } catch (error: any) { res.status(500).json({ error: error.message }); }
@@ -126,11 +150,13 @@ app.get("/api/user/profile", authenticate, async (req: any, res) => {
 app.post("/api/user/profile", authenticate, async (req: any, res) => {
   try {
     const profileData = req.body;
-    if (MONGODB_URI) {
-      const user = await User.findByIdAndUpdate(req.userId, { ...profileData, onboarded: true }, { new: true });
-      res.json(user);
+    if (USE_FIRESTORE) {
+      const userRef = db.collection('users').doc(req.userId);
+      await userRef.update({ ...profileData, onboarded: true });
+      const updated = await userRef.get();
+      res.json(updated.data());
     } else {
-      const index = mockUsers.findIndex(u => u._id === req.userId);
+      const index = mockUsers.findIndex(u => u._id === req.userId || u.email === req.userId);
       if (index !== -1) {
         mockUsers[index] = { ...mockUsers[index], ...profileData, onboarded: true };
         res.json(mockUsers[index]);
