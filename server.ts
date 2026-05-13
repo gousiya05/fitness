@@ -110,6 +110,15 @@ async function startServer() {
       res.json(data);
     } catch (error: any) { res.status(500).json({ error: "Analysis failed" }); }
   });
+  
+  // Health check
+  app.get("/api/health", (req, res) => {
+    res.json({ 
+      status: "ok", 
+      apiKeyConfigured: !!process.env.GEMINI_API_KEY,
+      dbConfigured: !!process.env.FIREBASE_PROJECT_ID || !!process.env.FIREBASE_SERVICE_ACCOUNT
+    });
+  });
 
   // Vite middleware
   if (process.env.NODE_ENV !== "production") {

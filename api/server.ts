@@ -182,7 +182,13 @@ app.post("/api/food/scan", authenticate, upload.single('image'), async (req: any
 });
 
 // Health check
-app.get("/api/health", (req, res) => res.json({ status: "ok" }));
+app.get("/api/health", (req, res) => {
+  res.json({ 
+    status: "ok", 
+    apiKeyConfigured: !!process.env.GEMINI_API_KEY,
+    dbConfigured: !!process.env.FIREBASE_PROJECT_ID || !!process.env.FIREBASE_SERVICE_ACCOUNT
+  });
+});
 
 // Gemini Proxy
 app.post("/api/gemini/generate", async (req, res) => {
