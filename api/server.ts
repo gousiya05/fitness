@@ -1,6 +1,7 @@
 import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import multer from "multer";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { db } from "./lib/firebase";
@@ -10,14 +11,10 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
+const upload = multer({ storage: multer.memoryStorage() });
+
 const JWT_SECRET = process.env.JWT_SECRET || "flexai-secret-key-2026";
 const USE_FIRESTORE = process.env.FIREBASE_PROJECT_ID || process.env.FIREBASE_SERVICE_ACCOUNT;
-
-if (USE_FIRESTORE) {
-  console.log("Firebase Firestore Integrated");
-} else {
-  console.warn("Firebase config missing. Auth will use in-memory mock for now.");
-}
 
 // In-memory mock store for when DB is missing
 const mockUsers: any[] = [];
@@ -27,17 +24,8 @@ let aiClient: GoogleGenAI | null = null;
 function getAiClient() {
   if (!aiClient) {
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error("GEMINI_API_KEY is not configured in environment variables.");
-    }
-    aiClient = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        }
-      }
-    });
+    if (!apiKey) throw new Error("GEMINI_API_KEY is not configured.");
+    aiClient = new GoogleGenAI({ apiKey });
   }
   return aiClient;
 }
@@ -59,26 +47,12 @@ const authenticate = (req: any, res: any, next: any) => {
 app.post("/api/auth/register", async (req, res) => {
   try {
     const { email, password, firstName, lastName } = req.body;
-    
     if (USE_FIRESTORE) {
       const userRef = db.collection('users').doc(email);
       const doc = await userRef.get();
-      
       if (doc.exists) return res.status(400).json({ error: "User already exists" });
-      
       const hashedPassword = await bcrypt.hash(password, 10);
-      const userData = {
-        email,
-        password: hashedPassword,
-        firstName,
-        lastName,
-        photoURL: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=200&h=200&auto=format&fit=crop',
-        onboarded: false,
-        createdAt: new Date().toISOString()
-      };
-      
-      await userRef.set(userData);
-      
+      await userRef.set({ email, password: hashedPassword, firstName, lastName, onboarded: false, createdAt: new Date().toISOString() });
       const token = jwt.sign({ userId: email }, JWT_SECRET);
       res.json({ token, user: { email, firstName, lastName, onboarded: false } });
     } else {
@@ -88,110 +62,129 @@ app.post("/api/auth/register", async (req, res) => {
       const token = jwt.sign({ userId: user._id }, JWT_SECRET);
       res.json({ token, user });
     }
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
+  } catch (error: any) { res.status(500).json({ error: error.message }); }
 });
 
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body;
-    
     if (USE_FIRESTORE) {
-      const userRef = db.collection('users').doc(email);
-      const doc = await userRef.get();
-      
+      const doc = await db.collection('users').doc(email).get();
       if (!doc.exists) return res.status(400).json({ error: "User not found" });
-      
       const user = doc.data()!;
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) return res.status(400).json({ error: "Invalid credentials" });
-      
+      if (!await bcrypt.compare(password, user.password)) return res.status(400).json({ error: "Invalid credentials" });
       const token = jwt.sign({ userId: email }, JWT_SECRET);
-      res.json({ 
-        token, 
-        user: { 
-          email: user.email, 
-          firstName: user.firstName, 
-          lastName: user.lastName, 
-          onboarded: user.onboarded,
-          // Include other profile data if it exists
-          age: user.age,
-          height: user.height,
-          weight: user.weight,
-          fitnessGoal: user.fitnessGoal
-        } 
-      });
+      res.json({ token, user: { ...user, password: Buffer.from('') } });
     } else {
       const user = mockUsers.find(u => u.email === email && u.password === password);
       if (!user) return res.status(400).json({ error: "Invalid credentials" });
       const token = jwt.sign({ userId: user._id }, JWT_SECRET);
-      res.json({ token, user: { email: user.email, firstName: user.firstName, lastName: user.lastName, onboarded: user.onboarded } });
+      res.json({ token, user });
     }
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
+  } catch (error: any) { res.status(500).json({ error: error.message }); }
 });
 
+// Profile Routes
 app.get("/api/user/profile", authenticate, async (req: any, res) => {
   try {
     if (USE_FIRESTORE) {
-      const userRef = db.collection('users').doc(req.userId);
-      const doc = await userRef.get();
-      if (!doc.exists) return res.status(404).json({ error: "User not found" });
+      const doc = await db.collection('users').doc(req.userId).get();
       res.json(doc.data());
     } else {
-      const user = mockUsers.find(u => u._id === req.userId || u.email === req.userId);
-      res.json(user);
+      res.json(mockUsers.find(u => u._id === req.userId || u.email === req.userId));
     }
   } catch (error: any) { res.status(500).json({ error: error.message }); }
 });
 
 app.post("/api/user/profile", authenticate, async (req: any, res) => {
   try {
-    const profileData = req.body;
+    const data = req.body;
     if (USE_FIRESTORE) {
-      const userRef = db.collection('users').doc(req.userId);
-      await userRef.update({ ...profileData, onboarded: true });
-      const updated = await userRef.get();
-      res.json(updated.data());
+      await db.collection('users').doc(req.userId).update({ ...data, onboarded: true });
+      res.json({ success: true });
     } else {
-      const index = mockUsers.findIndex(u => u._id === req.userId || u.email === req.userId);
-      if (index !== -1) {
-        mockUsers[index] = { ...mockUsers[index], ...profileData, onboarded: true };
-        res.json(mockUsers[index]);
-      } else {
-        res.status(404).json({ error: "User not found" });
-      }
+      const idx = mockUsers.findIndex(u => u._id === req.userId || u.email === req.userId);
+      if (idx !== -1) mockUsers[idx] = { ...mockUsers[idx], ...data, onboarded: true };
+      res.json({ success: true });
     }
   } catch (error: any) { res.status(500).json({ error: error.message }); }
 });
 
-// Health check
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+// Food Scanner Route
+app.post("/api/food/scan", authenticate, upload.single('image'), async (req: any, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No image provided" });
+    
+    const ai = getAiClient();
+    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+    
+    const prompt = `
+      Analyze this food image and provide detailed nutritional information.
+      Return the result in strict JSON format:
+      {
+        "foodItems": [
+          {
+            "name": "string",
+            "calories": number,
+            "protein": "string",
+            "carbs": "string",
+            "fat": "string",
+            "fiber": "string",
+            "sugar": "string",
+            "portion": "string"
+          }
+        ],
+        "totalCalories": number,
+        "recommendation": "string (Why should I eat this or not, based on a general fitness perspective)",
+        "isHealthy": boolean
+      }
+    `;
+
+    const result = await model.generateContent([
+      prompt,
+      {
+        inlineData: {
+          data: req.file.buffer.toString("base64"),
+          mimeType: req.file.mimetype
+        }
+      }
+    ]);
+
+    const response = await result.response;
+    const text = response.text();
+    const cleanJson = text.replace(/```json|```/g, "").trim();
+    const nutritionData = JSON.parse(cleanJson);
+
+    // Save to history if Firestore is active
+    if (USE_FIRESTORE) {
+      await db.collection('users').doc(req.userId).collection('scans').add({
+        ...nutritionData,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    res.json(nutritionData);
+  } catch (error: any) {
+    console.error("Scanner Error:", error);
+    res.status(500).json({ error: "Failed to analyze food image" });
+  }
 });
 
-// Gemini API Proxy
+// Health check
+app.get("/api/health", (req, res) => res.json({ status: "ok" }));
+
+// Gemini Proxy
 app.post("/api/gemini/generate", async (req, res) => {
   try {
     const { prompt, systemInstruction } = req.body;
     const ai = getAiClient();
-    
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+    const result = await ai.getGenerativeModel({ model: "gemini-1.5-flash" }).generateContent({
       contents: prompt,
-      config: {
-        systemInstruction: systemInstruction || "You are a fitness expert.",
-        responseMimeType: "application/json",
-      },
+      generationConfig: { responseMimeType: "application/json" },
+      systemInstruction: systemInstruction || "You are a fitness expert."
     });
-    
-    res.json({ text: response.text });
-  } catch (error: any) {
-    console.error("Gemini Error:", error);
-    res.status(500).json({ error: error.message || "Failed to generate content" });
-  }
+    res.json({ text: result.response.text() });
+  } catch (error: any) { res.status(500).json({ error: error.message }); }
 });
 
 export default app;

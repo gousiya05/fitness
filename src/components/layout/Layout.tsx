@@ -12,7 +12,7 @@ interface LayoutProps {
 
 const navItems = [
   { id: 'dashboard', label: 'Dashboard', icon: Home, path: '/dashboard' },
-  { id: 'pose', label: 'AI Pose', icon: ShieldCheck, path: '/pose' },
+  { id: 'pose', label: 'Food Scanner', icon: Utensils, path: '/pose' },
   { id: 'fitness', label: 'Fitness', icon: Calculator, path: '/fitness' },
   { id: 'chat', label: 'AI Coach', icon: Sparkles, path: '/chat' },
   { id: 'diet', label: 'Diet', icon: Utensils, path: '/diet' },
