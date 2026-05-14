@@ -66,6 +66,8 @@ export default function DietRecommendation() {
       Goal: ${profile.fitnessGoal}, Activity: ${profile.activityLevel}, Diet: ${profile.dietPreference}, Allergies: ${profile.allergies || 'none'}.
       Target Calories: ${metrics.tdee}kcal.
       
+      You MUST include exact meal plans for: Breakfast, Lunch, Snacks, Pre-Workout, Post-Workout, and Dinner.
+      
       Return ONLY a JSON object: 
       { 
         "summary": "Short scientific analysis of metabolic needs", 
