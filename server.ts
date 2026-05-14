@@ -6,12 +6,16 @@ import jwt from "jsonwebtoken";
 import multer from "multer";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
-import { db } from "./api/lib/firebase";
+import mongoose from "mongoose";
+import { User } from "./api/models/User";
 
 dotenv.config();
 
 const JWT_SECRET = process.env.JWT_SECRET || "flexai-secret-key-2026";
-const USE_FIRESTORE = process.env.FIREBASE_PROJECT_ID || process.env.FIREBASE_SERVICE_ACCOUNT;
+const USE_MONGODB = !!process.env.MONGODB_URI;
+if (USE_MONGODB) {
+  mongoose.connect(process.env.MONGODB_URI as string).then(() => console.log("Connected to MongoDB")).catch(err => console.error(err));
+}
 const upload = multer({ storage: multer.memoryStorage() });
 
 let aiClient: GoogleGenAI | null = null;
@@ -45,11 +49,11 @@ async function startServer() {
   app.post("/api/auth/register", async (req, res) => {
     try {
       const { email, password, firstName, lastName } = req.body;
-      if (USE_FIRESTORE) {
-        const doc = await db.collection('users').doc(email).get();
-        if (doc.exists) return res.status(400).json({ error: "User already exists" });
+      if (USE_MONGODB) {
+        const existingUser = await User.findOne({ email });
+        if (existingUser) return res.status(400).json({ error: "User already exists" });
         const hashedPassword = await bcrypt.hash(password, 10);
-        await db.collection('users').doc(email).set({ email, password: hashedPassword, firstName, lastName, onboarded: false, createdAt: new Date().toISOString() });
+        await User.create({ email, password: hashedPassword, firstName, lastName, onboarded: false });
         const token = jwt.sign({ userId: email }, JWT_SECRET);
         res.json({ token, user: { email, firstName, lastName, onboarded: false } });
       } else {
@@ -62,13 +66,14 @@ async function startServer() {
   app.post("/api/auth/login", async (req, res) => {
     try {
       const { email, password } = req.body;
-      if (USE_FIRESTORE) {
-        const doc = await db.collection('users').doc(email).get();
-        if (!doc.exists) return res.status(400).json({ error: "User not found" });
-        const user = doc.data()!;
-        if (!await bcrypt.compare(password, user.password)) return res.status(400).json({ error: "Invalid credentials" });
+      if (USE_MONGODB) {
+        const user = await User.findOne({ email });
+        if (!user) return res.status(400).json({ error: "User not found" });
+        if (!user.password || !await bcrypt.compare(password, user.password)) return res.status(400).json({ error: "Invalid credentials" });
         const token = jwt.sign({ userId: email }, JWT_SECRET);
-        res.json({ token, user: { ...user, password: '' } });
+        const userObj = user.toObject();
+        delete userObj.password;
+        res.json({ token, user: userObj });
       } else {
         const token = jwt.sign({ userId: email }, JWT_SECRET);
         res.json({ token, user: { email, firstName: 'User', onboarded: true } });
@@ -78,16 +83,16 @@ async function startServer() {
 
   app.get("/api/user/profile", authenticate, async (req: any, res) => {
     try {
-      if (USE_FIRESTORE) {
-        const doc = await db.collection('users').doc(req.userId).get();
-        res.json(doc.exists ? doc.data() : {});
+      if (USE_MONGODB) {
+        const user = await User.findOne({ email: req.userId });
+        res.json(user ? user : {});
       } else { res.json({ email: req.userId }); }
     } catch (error: any) { res.status(500).json({ error: error.message }); }
   });
 
   app.post("/api/user/profile", authenticate, async (req: any, res) => {
     try {
-      if (USE_FIRESTORE) await db.collection('users').doc(req.userId).update({ ...req.body, onboarded: true });
+      if (USE_MONGODB) await User.findOneAndUpdate({ email: req.userId }, { ...req.body, onboarded: true });
       res.json({ success: true });
     } catch (error: any) { res.status(500).json({ error: error.message }); }
   });
@@ -104,9 +109,9 @@ async function startServer() {
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) throw new Error("Invalid AI response");
       const data = JSON.parse(jsonMatch[0]);
-      if (USE_FIRESTORE) {
+      if (USE_MONGODB) {
         try {
-          await db.collection('users').doc(req.userId).collection('scans').add({ ...data, timestamp: new Date().toISOString() });
+          // If we had a scans schema we could use it here. For now, we can omit or push to an array on user if added.
         } catch (e) {}
       }
       res.json(data);
@@ -118,7 +123,7 @@ async function startServer() {
     res.json({ 
       status: "ok", 
       apiKeyConfigured: !!process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_KEY",
-      dbConfigured: !!process.env.FIREBASE_PROJECT_ID || !!process.env.FIREBASE_SERVICE_ACCOUNT
+      dbConfigured: USE_MONGODB
     });
   });
 

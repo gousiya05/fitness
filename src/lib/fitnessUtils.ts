@@ -34,12 +34,12 @@ export function calculateMetrics(profile: UserProfile): BodyMetrics {
 
   // Adjust calories based on goal
   let targetCalories = tdee;
-  if (fitnessGoal === 'muscle_gain') targetCalories += 300;
-  if (fitnessGoal === 'fat_loss') targetCalories -= 500;
-  if (fitnessGoal === 'strength') targetCalories += 200;
+  if (fitnessGoal === 'weight_loss') targetCalories -= 500;
+  if (fitnessGoal === 'weight_gain') targetCalories += 500;
+  if (fitnessGoal === 'lean_bulk' || fitnessGoal === 'muscle_gain') targetCalories += 300;
 
-  // Macros Calculation (Rough targets)
-  const proteinPerKg = (fitnessGoal === 'muscle_gain' || fitnessGoal === 'strength') ? 2.2 : 1.8;
+  // Macros Calculation
+  const proteinPerKg = (fitnessGoal === 'muscle_gain' || fitnessGoal === 'lean_bulk') ? 2.2 : (fitnessGoal === 'weight_loss' ? 2.0 : 1.8);
   const protein = weight * proteinPerKg;
   
   // Fat: 25% of calories
@@ -48,8 +48,8 @@ export function calculateMetrics(profile: UserProfile): BodyMetrics {
   // Carbs: Remainder
   const carbs = (targetCalories - (protein * 4) - (fat * 9)) / 4;
 
-  // Water: 35ml per kg
-  const water = (weight * 35) / 1000;
+  // Water: User input or fallback to 35ml per kg
+  const water = profile.dailyWaterIntake || ((weight * 35) / 1000);
 
   return {
     bmi: parseFloat(bmi.toFixed(1)) || 0,

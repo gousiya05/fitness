@@ -14,11 +14,14 @@ export interface IUser extends Document {
   gender?: string;
   height?: number;
   weight?: number;
+  goalWeight?: number;
   fitnessGoal?: string;
   activityLevel?: string;
   dietPreference?: string;
   allergies?: string;
   workoutExperience?: string;
+  dailyWaterIntake?: number;
+  stepsGoal?: number;
 }
 
 const UserSchema = new mongoose.Schema({
@@ -35,11 +38,14 @@ const UserSchema = new mongoose.Schema({
   gender: { type: String },
   height: { type: Number },
   weight: { type: Number },
+  goalWeight: { type: Number },
   fitnessGoal: { type: String },
   activityLevel: { type: String },
   dietPreference: { type: String },
   allergies: { type: String },
   workoutExperience: { type: String },
+  dailyWaterIntake: { type: Number },
+  stepsGoal: { type: Number },
 });
 
 export const User: Model<IUser> = mongoose.models.User || mongoose.model<IUser>('User', UserSchema);

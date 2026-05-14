@@ -75,9 +75,11 @@ export default function DietRecommendation() {
         "macros": { "p": "${metrics.macros.protein}g", "c": "${metrics.macros.carbs}g", "f": "${metrics.macros.fat}g" },
         "meals": [
           { "type": "Breakfast", "name": "Meal name", "calories": "approx kcal", "macros": "P/C/F", "time": "08:00" },
+          { "type": "Lunch", "name": "Meal name", "calories": "approx kcal", "macros": "P/C/F", "time": "13:00" },
+          { "type": "Snacks", "name": "Meal name", "calories": "approx kcal", "macros": "P/C/F", "time": "15:00" },
           { "type": "Pre-Workout", "name": "Meal name", "calories": "approx kcal", "macros": "P/C/F", "time": "16:00" },
-          { "type": "Dinner", "name": "Meal name", "calories": "approx kcal", "macros": "P/C/F", "time": "20:00" },
-          ...include lunch, snacks, and post-workout
+          { "type": "Post-Workout", "name": "Meal name", "calories": "approx kcal", "macros": "P/C/F", "time": "18:00" },
+          { "type": "Dinner", "name": "Meal name", "calories": "approx kcal", "macros": "P/C/F", "time": "20:00" }
         ],
         "weekly_planner": [{ "day": "Monday", "theme": "High Carb Re-feed" }, ...7 days],
         "recovery_tips": ["hydration tip", "metabolic tip", "sleep tip"]

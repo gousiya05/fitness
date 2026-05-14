@@ -38,11 +38,14 @@ export default function Onboarding() {
     gender: 'male',
     height: 180,
     weight: 75,
-    fitnessGoal: 'muscle_gain',
+    fitnessGoal: 'weight_loss',
     activityLevel: 'moderate',
-    dietPreference: 'omnivore',
+    dietPreference: 'non-veg',
     allergies: '',
     workoutExperience: 'intermediate',
+    goalWeight: 70,
+    dailyWaterIntake: 3,
+    stepsGoal: 10000,
   });
 
   const handleNext = () => {
@@ -188,6 +191,18 @@ export default function Onboarding() {
                        </div>
                     </div>
                     <div className="space-y-4">
+                       <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Target Mass (KG)</label>
+                       <div className="relative group">
+                          <Target className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-primary" size={20} />
+                          <Input 
+                            type="number" 
+                            value={profile.goalWeight} 
+                            onChange={(e) => setProfile({...profile, goalWeight: parseInt(e.target.value)})}
+                            className="h-16 pl-12 glass border-transparent focus:border-primary/50 rounded-2xl font-black text-xl italic" 
+                          />
+                       </div>
+                    </div>
+                    <div className="space-y-4">
                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Current Activity Level</label>
                        <select 
                          value={profile.activityLevel} 
@@ -210,11 +225,11 @@ export default function Onboarding() {
                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Primary Mission</label>
                        <div className="grid grid-cols-1 gap-2">
                           {[
-                            { id: 'muscle_gain', label: 'Hypertrophy (Muscle Gain)' },
-                            { id: 'fat_loss', label: 'Lipid Reduction (Fat Loss)' },
-                            { id: 'maintenance', label: 'Stasis (Maintenance)' },
-                            { id: 'strength', label: 'Neural Force (Pure Strength)' },
-                            { id: 'endurance', label: 'Sustained Output (Endurance)' },
+                            { id: 'weight_loss', label: 'Weight Loss' },
+                            { id: 'weight_gain', label: 'Weight Gain' },
+                            { id: 'lean_bulk', label: 'Lean Bulk' },
+                            { id: 'muscle_gain', label: 'Muscle Gain' },
+                            { id: 'maintenance', label: 'Maintain' },
                           ].map((g) => (
                             <button
                               key={g.id}
@@ -248,7 +263,7 @@ export default function Onboarding() {
                     <div className="space-y-4">
                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Dietary Preference</label>
                        <div className="grid grid-cols-2 gap-2">
-                          {['omnivore', 'vegan', 'vegetarian', 'keto', 'paleo'].map((d) => (
+                          {['veg', 'non-veg', 'vegan', 'vegetarian', 'keto', 'paleo'].map((d) => (
                             <button
                               key={d}
                               onClick={() => setProfile({...profile, dietPreference: d as any})}
@@ -267,6 +282,26 @@ export default function Onboarding() {
                          onChange={(e) => setProfile({...profile, allergies: e.target.value})}
                          className="h-16 glass border-transparent focus:border-primary/50 rounded-2xl font-black text-xs uppercase tracking-widest px-6" 
                        />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                       <div className="space-y-4">
+                          <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Water (L)</label>
+                          <Input 
+                            type="number" 
+                            value={profile.dailyWaterIntake} 
+                            onChange={(e) => setProfile({...profile, dailyWaterIntake: parseFloat(e.target.value)})}
+                            className="h-16 glass border-transparent focus:border-primary/50 rounded-2xl font-black text-xl italic px-6" 
+                          />
+                       </div>
+                       <div className="space-y-4">
+                          <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Steps Goal</label>
+                          <Input 
+                            type="number" 
+                            value={profile.stepsGoal} 
+                            onChange={(e) => setProfile({...profile, stepsGoal: parseInt(e.target.value)})}
+                            className="h-16 glass border-transparent focus:border-primary/50 rounded-2xl font-black text-xl italic px-6" 
+                          />
+                       </div>
                     </div>
                  </div>
                )}

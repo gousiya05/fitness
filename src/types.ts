@@ -3,11 +3,14 @@ export interface UserProfile {
   gender: 'male' | 'female' | 'other';
   height: number; // in cm
   weight: number; // in kg
-  fitnessGoal: 'muscle_gain' | 'fat_loss' | 'maintenance' | 'endurance' | 'strength';
+  goalWeight: number; // in kg
+  fitnessGoal: 'weight_loss' | 'weight_gain' | 'lean_bulk' | 'muscle_gain' | 'maintenance';
   activityLevel: 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active';
-  dietPreference: 'omnivore' | 'vegan' | 'vegetarian' | 'keto' | 'paleo';
+  dietPreference: 'veg' | 'non-veg' | 'vegan' | 'vegetarian' | 'keto' | 'paleo';
   allergies: string;
   workoutExperience: 'beginner' | 'intermediate' | 'advanced';
+  dailyWaterIntake: number; // in liters
+  stepsGoal: number;
 }
 
 export interface BodyMetrics {
