@@ -18,7 +18,9 @@ let aiClient: GoogleGenAI | null = null;
 function getAiClient() {
   if (!aiClient) {
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error("GEMINI_API_KEY is not configured.");
+    if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
+      throw new Error("GEMINI_API_KEY is not configured. Please add it to your .env file.");
+    }
     aiClient = new GoogleGenAI({ apiKey });
   }
   return aiClient;
@@ -78,7 +80,7 @@ async function startServer() {
     try {
       if (USE_FIRESTORE) {
         const doc = await db.collection('users').doc(req.userId).get();
-        res.json(doc.data());
+        res.json(doc.exists ? doc.data() : {});
       } else { res.json({ email: req.userId }); }
     } catch (error: any) { res.status(500).json({ error: error.message }); }
   });
@@ -115,9 +117,26 @@ async function startServer() {
   app.get("/api/health", (req, res) => {
     res.json({ 
       status: "ok", 
-      apiKeyConfigured: !!process.env.GEMINI_API_KEY,
+      apiKeyConfigured: !!process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_KEY",
       dbConfigured: !!process.env.FIREBASE_PROJECT_ID || !!process.env.FIREBASE_SERVICE_ACCOUNT
     });
+  });
+
+  // Gemini Proxy
+  app.post("/api/gemini/generate", async (req, res) => {
+    try {
+      const { prompt, systemInstruction } = req.body;
+      const ai = getAiClient();
+      const result = await ai.getGenerativeModel({ model: "gemini-1.5-flash" }).generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: "application/json" },
+        systemInstruction: systemInstruction || "You are a fitness expert."
+      });
+      res.json({ text: result.response.text() });
+    } catch (error: any) { 
+      console.error("Gemini Error:", error);
+      res.status(500).json({ error: error.message }); 
+    }
   });
 
   // Vite middleware

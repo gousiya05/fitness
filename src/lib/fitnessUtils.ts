@@ -1,10 +1,16 @@
 import { UserProfile, BodyMetrics } from '../types';
 
 export function calculateMetrics(profile: UserProfile): BodyMetrics {
-  const { age, gender, height, weight, activityLevel, fitnessGoal } = profile;
+  const age = profile.age || 25;
+  const gender = profile.gender || 'male';
+  const height = profile.height || 180;
+  const weight = profile.weight || 75;
+  const activityLevel = profile.activityLevel || 'moderate';
+  const fitnessGoal = profile.fitnessGoal || 'maintenance';
 
   // BMI = kg / m^2
-  const bmi = weight / Math.pow(height / 100, 2);
+  const heightInMeters = height / 100;
+  const bmi = heightInMeters > 0 ? weight / Math.pow(heightInMeters, 2) : 0;
 
   // BMR (Mifflin-St Jeor Equation)
   let bmr = (10 * weight) + (6.25 * height) - (5 * age);
@@ -23,7 +29,8 @@ export function calculateMetrics(profile: UserProfile): BodyMetrics {
     very_active: 1.9,
   };
 
-  const tdee = bmr * multipliers[activityLevel];
+  const multiplier = multipliers[activityLevel as keyof typeof multipliers] || 1.2;
+  const tdee = bmr * multiplier;
 
   // Adjust calories based on goal
   let targetCalories = tdee;
@@ -32,7 +39,6 @@ export function calculateMetrics(profile: UserProfile): BodyMetrics {
   if (fitnessGoal === 'strength') targetCalories += 200;
 
   // Macros Calculation (Rough targets)
-  // Protein: 2g per kg (for muscle/strength), 1.6g otherwise
   const proteinPerKg = (fitnessGoal === 'muscle_gain' || fitnessGoal === 'strength') ? 2.2 : 1.8;
   const protein = weight * proteinPerKg;
   
@@ -46,14 +52,14 @@ export function calculateMetrics(profile: UserProfile): BodyMetrics {
   const water = (weight * 35) / 1000;
 
   return {
-    bmi: parseFloat(bmi.toFixed(1)),
-    bmr: Math.round(bmr),
-    tdee: Math.round(targetCalories),
+    bmi: parseFloat(bmi.toFixed(1)) || 0,
+    bmr: Math.round(bmr) || 0,
+    tdee: Math.round(targetCalories) || 0,
     macros: {
-      protein: Math.round(protein),
-      carbs: Math.round(carbs),
-      fat: Math.round(fat),
+      protein: Math.round(protein) || 0,
+      carbs: Math.round(carbs) || 0,
+      fat: Math.round(fat) || 0,
     },
-    water: parseFloat(water.toFixed(1)),
+    water: parseFloat(water.toFixed(1)) || 0,
   };
 }

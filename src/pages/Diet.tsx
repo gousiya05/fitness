@@ -40,6 +40,11 @@ export default function DietRecommendation() {
   const [metrics, setMetrics] = useState<BodyMetrics | null>(null);
   const [plan, setPlan] = useState<DietPlan | null>(null);
 
+  // Ensure plan fields have default empty arrays when undefined
+  const recoveryTips = plan?.recovery_tips ?? [];
+  const weeklyPlanner = plan?.weekly_planner ?? [];
+  const meals = plan?.meals ?? [];
+
   useEffect(() => {
     const stored = localStorage.getItem('userProfile');
     if (stored) {
@@ -164,7 +169,7 @@ export default function DietRecommendation() {
                    Health Intelligence
                 </h3>
                 <div className="space-y-4">
-                   {plan.recovery_tips.map((tip, i) => (
+                   {recoveryTips.map((tip, i) => (
                      <div key={i} className="flex gap-4 p-4 rounded-2xl bg-white/5 border border-white/5 hover:border-primary/20 transition-all">
                         <div className="h-2 w-2 rounded-full bg-primary mt-1 shadow-[0_0_8px_var(--color-primary)]" />
                         <p className="text-xs font-bold text-white/60 leading-relaxed uppercase">{tip}</p>
@@ -201,7 +206,7 @@ export default function DietRecommendation() {
                  className="space-y-8"
                >
                  <div className="grid gap-4 md:grid-cols-2">
-                    {plan.meals.map((meal, i) => (
+                    {meals.map((meal, i) => (
                       <motion.div
                         key={i}
                         initial={{ opacity: 0, x: -20 }}
@@ -240,7 +245,7 @@ export default function DietRecommendation() {
                        <h3 className="text-2xl font-black italic uppercase tracking-tighter">Hyper-Caloric Timeline</h3>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-                       {plan.weekly_planner.map((day, i) => (
+                       {weeklyPlanner.map((day, i) => (
                          <div key={i} className="glass p-5 rounded-2xl border border-white/5 group hover:border-primary/40 transition-all text-center">
                             <div className="text-[10px] font-black text-primary mb-2 uppercase tracking-[0.2em]">{day.day}</div>
                             <div className="text-[9px] font-bold text-white/40 uppercase leading-relaxed group-hover:text-white transition-colors">{day.theme}</div>

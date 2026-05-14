@@ -15,8 +15,10 @@ import {
   BrainCircuit,
   Medal,
   Dumbbell,
-  Utensils
+  Utensils,
+  Loader2
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -65,12 +67,16 @@ const achievements = [
 export default function Dashboard() {
   const [profile, setProfile] = React.useState<UserProfile | null>(null);
   const [metrics, setMetrics] = React.useState<BodyMetrics | null>(null);
+  const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
     const fetchProfile = async () => {
       try {
         const token = localStorage.getItem('token');
-        if (!token) return;
+        if (!token) {
+          setLoading(false);
+          return;
+        }
 
         const response = await fetch('/api/user/profile', {
           headers: { 'Authorization': `Bearer ${token}` }
@@ -78,11 +84,12 @@ export default function Dashboard() {
 
         if (response.ok) {
           const p = await response.json() as UserProfile;
-          setProfile(p);
-          setMetrics(calculateMetrics(p));
-          localStorage.setItem('userProfile', JSON.stringify(p));
+          if (p && Object.keys(p).length > 0) {
+            setProfile(p);
+            setMetrics(calculateMetrics(p));
+            localStorage.setItem('userProfile', JSON.stringify(p));
+          }
         } else {
-          // Fallback to local storage if API fails
           const stored = localStorage.getItem('userProfile');
           if (stored) {
             const p = JSON.parse(stored) as UserProfile;
@@ -92,11 +99,22 @@ export default function Dashboard() {
         }
       } catch (err) {
         console.error("Failed to fetch profile:", err);
+      } finally {
+        setLoading(false);
       }
     };
 
     fetchProfile();
   }, []);
+
+  if (loading) {
+    return (
+      <div className="h-[80vh] w-full flex flex-col items-center justify-center gap-4">
+        <Loader2 className="h-12 w-12 text-primary animate-spin" />
+        <p className="text-primary font-black uppercase tracking-[0.4em] animate-pulse">Initializing Neural Link...</p>
+      </div>
+    );
+  }
 
   const stats = [
     { label: 'Body Mass Index', val: metrics?.bmi || '24.2', icon: Activity, sub: 'HEALTH_INDEX', color: 'text-primary' },
@@ -134,8 +152,8 @@ export default function Dashboard() {
             System <br/> <span className="text-primary text-neon">Active</span>
           </motion.h1>
           <p className="mt-6 text-white/40 font-medium max-w-xl text-lg leading-relaxed text-balance">
-            {profile ? `Greetings, subject. Analyzing biomechanic telemetry for current weight of ${profile.weight}kg. ` : 'Analyzing biomechanic telemetry. '}
-            Your metabolic output is optimized for {profile?.fitnessGoal.replace('_', ' ') || 'maintenance'}. 
+            {profile ? `Greetings, subject. Analyzing biomechanic telemetry for current weight of ${profile.weight || '??'}kg. ` : 'Analyzing biomechanic telemetry. '}
+            Your metabolic output is optimized for {profile?.fitnessGoal?.replace('_', ' ') || 'maintenance'}. 
             Engaging hypertrophy protocols for maximum fiber recruitment.
           </p>
         </div>
@@ -197,7 +215,7 @@ export default function Dashboard() {
             <div className="flex items-center justify-between mb-10">
                <div>
                   <h3 className="text-2xl font-black italic uppercase tracking-tighter text-primary">Active Fuel Protocol</h3>
-                  <p className="text-[10px] font-bold text-white/20 uppercase mt-1 tracking-widest">Optimized for {profile?.fitnessGoal.replace('_', ' ') || 'maintenance'}</p>
+                  <p className="text-[10px] font-bold text-white/20 uppercase mt-1 tracking-widest">Optimized for {profile?.fitnessGoal?.replace('_', ' ') || 'maintenance'}</p>
                </div>
                <Button 
                   onClick={() => window.location.href = '/diet'}
@@ -432,6 +450,3 @@ export default function Dashboard() {
   );
 }
 
-function cn(...inputs: any[]) {
-  return inputs.filter(Boolean).join(' ');
-}
