@@ -102,10 +102,12 @@ async function startServer() {
     try {
       if (!req.file) return res.status(400).json({ error: "No image provided" });
       const ai = getAiClient();
-      const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
       const prompt = `Analyze this food image and provide detailed nutritional information. Return strict JSON: { "foodItems": [{"name":"string","calories":number,"protein":"string","carbs":"string","fat":"string","fiber":"string","sugar":"string","portion":"string"}], "totalCalories": number, "recommendation": "string", "isHealthy": boolean }`;
-      const result = await model.generateContent([prompt, { inlineData: { data: req.file.buffer.toString("base64"), mimeType: req.file.mimetype } }]);
-      const text = (await result.response).text();
+      const result = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [prompt, { inlineData: { data: req.file.buffer.toString("base64"), mimeType: req.file.mimetype } }]
+      });
+      const text = result.text;
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) throw new Error("Invalid AI response");
       const data = JSON.parse(jsonMatch[0]);
@@ -115,7 +117,10 @@ async function startServer() {
         } catch (e) {}
       }
       res.json(data);
-    } catch (error: any) { res.status(500).json({ error: "Analysis failed" }); }
+    } catch (error: any) {
+      console.error("Scanner Error:", error);
+      res.status(500).json({ error: error.message || "Analysis failed" });
+    }
   });
   
   // Health check
@@ -132,12 +137,15 @@ async function startServer() {
     try {
       const { prompt, systemInstruction } = req.body;
       const ai = getAiClient();
-      const result = await ai.getGenerativeModel({ model: "gemini-1.5-flash" }).generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: "application/json" },
-        systemInstruction: systemInstruction || "You are a fitness expert."
+      const result = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          systemInstruction: systemInstruction || "You are a fitness expert."
+        }
       });
-      res.json({ text: result.response.text() });
+      res.json({ text: result.text });
     } catch (error: any) { 
       console.error("Gemini Error:", error);
       res.status(500).json({ error: error.message }); 

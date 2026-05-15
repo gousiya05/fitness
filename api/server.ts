@@ -115,8 +115,20 @@ app.post("/api/food/scan", authenticate, upload.single('image'), async (req: any
   try {
     if (!req.file) return res.status(400).json({ error: "No image provided" });
     
-    const ai = getAiClient();
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const result = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        prompt,
+        {
+          inlineData: {
+            data: req.file.buffer.toString("base64"),
+            mimeType: req.file.mimetype
+          }
+        }
+      ]
+    });
+
+    const text = result.text;
     
     const prompt = `
       Analyze this food image and provide detailed nutritional information.
@@ -140,18 +152,7 @@ app.post("/api/food/scan", authenticate, upload.single('image'), async (req: any
       }
     `;
 
-    const result = await model.generateContent([
-      prompt,
-      {
-        inlineData: {
-          data: req.file.buffer.toString("base64"),
-          mimeType: req.file.mimetype
-        }
-      }
-    ]);
 
-    const response = await result.response;
-    const text = response.text();
     
     // Robust JSON extraction
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -195,12 +196,15 @@ app.post("/api/gemini/generate", async (req, res) => {
   try {
     const { prompt, systemInstruction } = req.body;
     const ai = getAiClient();
-    const result = await ai.getGenerativeModel({ model: "gemini-1.5-flash" }).generateContent({
+    const result = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
       contents: prompt,
-      generationConfig: { responseMimeType: "application/json" },
-      systemInstruction: systemInstruction || "You are a fitness expert."
+      config: {
+        responseMimeType: "application/json",
+        systemInstruction: systemInstruction || "You are a fitness expert."
+      }
     });
-    res.json({ text: result.response.text() });
+    res.json({ text: result.text });
   } catch (error: any) { res.status(500).json({ error: error.message }); }
 });
 
