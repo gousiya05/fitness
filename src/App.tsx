@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/layout/Layout';
 import Dashboard from './components/dashboard/Dashboard';
 import PoseDetector from './components/pose/PoseDetector';
+import FoodScanner from './components/dashboard/FoodScanner';
 import BMICalculator from './components/fitness/BMICalculator';
 import CalorieTracker from './components/fitness/CalorieTracker';
 import WorkoutRecommendations from './components/fitness/WorkoutRecommendations';
@@ -54,6 +55,7 @@ export default function App() {
         <Route path="/onboarding" element={user ? <Onboarding /> : <Navigate to="/auth" replace />} />
         
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/scanner" element={<ProtectedRoute><FoodScanner /></ProtectedRoute>} />
         <Route path="/pose" element={<ProtectedRoute><PoseDetector /></ProtectedRoute>} />
         <Route path="/fitness" element={
           <ProtectedRoute>

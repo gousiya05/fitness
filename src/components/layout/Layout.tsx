@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, X, Home, Sparkles, ShieldCheck, Calculator, Flame, User, LogOut, Utensils } from 'lucide-react';
+import { Menu, X, Home, Sparkles, ShieldCheck, Calculator, Flame, User, LogOut, Utensils, Activity } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -12,7 +12,8 @@ interface LayoutProps {
 
 const navItems = [
   { id: 'dashboard', label: 'Dashboard', icon: Home, path: '/dashboard' },
-  { id: 'pose', label: 'Food Scanner', icon: Utensils, path: '/pose' },
+  { id: 'scanner', label: 'Food Scanner', icon: Utensils, path: '/scanner' },
+  { id: 'pose', label: 'Live Form', icon: Activity, path: '/pose' },
   { id: 'fitness', label: 'Fitness', icon: Calculator, path: '/fitness' },
   { id: 'chat', label: 'AI Coach', icon: Sparkles, path: '/chat' },
   { id: 'diet', label: 'Diet', icon: Utensils, path: '/diet' },

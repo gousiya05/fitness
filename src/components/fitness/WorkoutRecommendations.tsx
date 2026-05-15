@@ -49,6 +49,10 @@ export default function WorkoutRecommendations() {
   const [metrics, setMetrics] = useState<BodyMetrics | null>(null);
   const [plan, setPlan] = useState<WorkoutPlan | null>(null);
 
+  const exercises = plan?.exercises ?? [];
+  const weeklySchedule = plan?.weekly_schedule ?? [];
+  const recoverySuggestions = plan?.recovery_suggestions ?? [];
+
   useEffect(() => {
     const stored = localStorage.getItem('userProfile');
     if (stored) {
@@ -122,7 +126,7 @@ export default function WorkoutRecommendations() {
                  <Target size={64} />
               </div>
               <div className="text-[10px] font-black uppercase tracking-[0.4em] text-primary mb-2">Subject Objective</div>
-              <div className="text-3xl font-black italic tracking-tighter uppercase">{profile.fitnessGoal.replace('_', ' ')}</div>
+              <div className="text-3xl font-black italic tracking-tighter uppercase">{profile.fitnessGoal?.replace('_', ' ') || 'MAINTENANCE'}</div>
               <div className="mt-4 flex items-center gap-2">
                  <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
                     <motion.div initial={{ width: 0 }} animate={{ width: '85%' }} className="h-full bg-primary" />
@@ -161,7 +165,7 @@ export default function WorkoutRecommendations() {
                    <h3 className="text-xl font-black italic uppercase tracking-tighter">Mission Timeline</h3>
                 </div>
                 <div className="space-y-3">
-                   {plan.weekly_schedule.map((day, i) => (
+                   {weeklySchedule.map((day, i) => (
                      <div key={i} className={cn(
                        "flex items-center justify-between p-4 rounded-2xl border transition-all group",
                        day.rest ? "bg-white/[0.02] border-white/5 opacity-50" : "glass border-white/10 hover:border-primary/40 hover:bg-white/[0.05]"
@@ -193,7 +197,7 @@ export default function WorkoutRecommendations() {
                    <h3 className="text-xl font-black italic uppercase tracking-tighter">System Recovery</h3>
                 </div>
                 <div className="space-y-4">
-                   {plan.recovery_suggestions.map((tip, i) => (
+                   {recoverySuggestions.map((tip, i) => (
                      <div key={i} className="flex gap-4 p-4 rounded-2xl bg-black/40 border border-white/5">
                         <Activity size={16} className="text-primary mt-0.5 shrink-0" />
                         <p className="text-[10px] font-black text-white/60 uppercase leading-relaxed">{tip}</p>
@@ -237,7 +241,7 @@ export default function WorkoutRecommendations() {
                  </div>
 
                  <div className="grid gap-4">
-                   {plan.exercises.map((ex, i) => (
+                   {exercises.map((ex, i) => (
                      <motion.div
                        key={i}
                        initial={{ opacity: 0, x: 20 }}
