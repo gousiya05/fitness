@@ -28,15 +28,36 @@ export default function Home() {
   const navigate = useNavigate();
   const [isLoggedIn, setIsLoggedIn] = React.useState(false);
 
+  // Initialize States from existing profile or fallbacks
+  const getInitialProfile = () => {
+    try {
+      const stored = localStorage.getItem('userProfile');
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return null;
+  };
+
+  const initialProfile = getInitialProfile();
+
   // Sandbox States
   const [activeTab, setActiveTab] = React.useState<'metabolic' | 'food' | 'workout'>('metabolic');
   
   // Metabolic Synthesis States
-  const [weight, setWeight] = React.useState<number>(75);
-  const [height, setHeight] = React.useState<number>(180);
-  const [age, setAge] = React.useState<number>(25);
-  const [gender, setGender] = React.useState<'male' | 'female'>('male');
-  const [goal, setGoal] = React.useState<'cut' | 'maintain' | 'bulk'>('maintain');
+  const [weight, setWeight] = React.useState<number>(initialProfile?.weight || 75);
+  const [height, setHeight] = React.useState<number>(initialProfile?.height || 180);
+  const [age, setAge] = React.useState<number>(initialProfile?.age || 25);
+  const [gender, setGender] = React.useState<'male' | 'female'>(
+    initialProfile?.gender === 'female' ? 'female' : 'male'
+  );
+  const [goal, setGoal] = React.useState<'cut' | 'maintain' | 'bulk'>(() => {
+    if (initialProfile?.fitnessGoal === 'weight_loss') return 'cut';
+    if (initialProfile?.fitnessGoal === 'muscle_gain') return 'bulk';
+    return 'maintain';
+  });
 
   // Food Indexer States
   const [foodQuery, setFoodQuery] = React.useState('');
@@ -52,6 +73,32 @@ export default function Home() {
     setIsLoggedIn(!!(user && token));
   }, []);
 
+  // Write changes to userProfile in localStorage so they propagate dynamically to the entire application
+  React.useEffect(() => {
+    let mappedGoal: 'maintenance' | 'weight_loss' | 'muscle_gain' = 'maintenance';
+    if (goal === 'cut') mappedGoal = 'weight_loss';
+    if (goal === 'bulk') mappedGoal = 'muscle_gain';
+
+    const calculatedWater = parseFloat(((weight * 35) / 1000).toFixed(1));
+
+    const sandboxProfile = {
+      age,
+      gender,
+      height,
+      weight,
+      goalWeight: goal === 'cut' ? weight - 5 : (goal === 'bulk' ? weight + 5 : weight),
+      fitnessGoal: mappedGoal,
+      activityLevel: 'moderate',
+      dietPreference: 'non-veg',
+      allergies: '',
+      workoutExperience: 'intermediate',
+      dailyWaterIntake: calculatedWater,
+      stepsGoal: 10000
+    };
+
+    localStorage.setItem('userProfile', JSON.stringify(sandboxProfile));
+  }, [weight, height, age, gender, goal]);
+
   // Metabolic Logic
   const calculateBmr = () => {
     if (gender === 'male') {
@@ -62,15 +109,15 @@ export default function Home() {
   };
 
   const bmr = calculateBmr();
-  const tdee = Math.round(bmr * 1.375); // moderate activity multiplier
+  const tdee = Math.round(bmr * 1.55); // moderate activity multiplier to match dashboard
   
   const getTargetCalories = () => {
-    if (goal === 'cut') return tdee - 500;
-    if (goal === 'bulk') return tdee + 300;
-    return tdee;
+    if (goal === 'cut') return Math.round(tdee - 500);
+    if (goal === 'bulk') return Math.round(tdee + 300);
+    return Math.round(tdee);
   };
   const targetCalories = getTargetCalories();
-  const targetProtein = Math.round(weight * 2.2); // 2.2g per kg
+  const targetProtein = Math.round(weight * (goal === 'bulk' ? 2.2 : (goal === 'cut' ? 2.0 : 1.8)));
   const targetFat = Math.round((targetCalories * 0.25) / 9); // 25% of calories
   const targetCarbs = Math.round((targetCalories - (targetProtein * 4) - (targetFat * 9)) / 4);
 

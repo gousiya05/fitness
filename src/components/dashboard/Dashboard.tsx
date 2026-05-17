@@ -74,6 +74,12 @@ export default function Dashboard() {
       try {
         const token = localStorage.getItem('token');
         if (!token) {
+          const stored = localStorage.getItem('userProfile');
+          if (stored) {
+            const p = JSON.parse(stored) as UserProfile;
+            setProfile(p);
+            setMetrics(calculateMetrics(p));
+          }
           setLoading(false);
           return;
         }
