@@ -244,23 +244,13 @@ export default function Home() {
               Experience the world's most advanced AI-human fitness interface. Real-time skeletal mapping, metabolic prediction, and neural workout synthesis.
             </p>
             <div className="flex flex-col sm:flex-row gap-6">
-              {isLoggedIn ? (
-                <Button 
-                  onClick={() => navigate('/dashboard')}
-                  className="h-20 px-12 bg-primary text-black hover:bg-white rounded-[2rem] font-black text-xl italic uppercase tracking-tighter shadow-2xl neon-glow transition-all active:scale-95 animate-pulse"
-                >
-                  Enter Command Center
-                  <ArrowRight className="ml-2" size={24} />
-                </Button>
-              ) : (
-                <Button 
-                  onClick={() => navigate('/auth')}
-                  className="h-20 px-12 bg-primary text-black hover:bg-white rounded-[2rem] font-black text-xl italic uppercase tracking-tighter shadow-2xl neon-glow transition-all active:scale-95"
-                >
-                  Establish Neural Link
-                  <ArrowRight className="ml-2" size={24} />
-                </Button>
-              )}
+              <Button 
+                onClick={() => navigate('/dashboard')}
+                className="h-20 px-12 bg-primary text-black hover:bg-white rounded-[2rem] font-black text-xl italic uppercase tracking-tighter shadow-2xl neon-glow transition-all active:scale-95"
+              >
+                Establish Neural Link
+                <ArrowRight className="ml-2" size={24} />
+              </Button>
               <Button 
                 onClick={() => {
                   const element = document.getElementById('sandbox');
@@ -582,23 +572,13 @@ export default function Home() {
                   <h4 className="text-xs font-black uppercase tracking-wider text-white">Ready for more customized biological parameters?</h4>
                   <p className="text-[10px] font-semibold text-white/30 mt-0.5">Gain absolute access to Live skeleton pose estimation, Diet synthesis engines, and progressive Analytics.</p>
                 </div>
-                {isLoggedIn ? (
-                  <Button 
-                    onClick={() => navigate('/dashboard')}
-                    className="h-10 px-5 bg-primary text-black hover:bg-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all whitespace-nowrap"
-                  >
-                    Go to Dashboard
-                    <ArrowRight className="ml-1.5" size={14} />
-                  </Button>
-                ) : (
-                  <Button 
-                    onClick={() => navigate('/auth')}
-                    className="h-10 px-5 bg-primary text-black hover:bg-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all whitespace-nowrap"
-                  >
-                    Link Neural Hardware
-                    <ArrowRight className="ml-1.5" size={14} />
-                  </Button>
-                )}
+                <Button 
+                  onClick={() => navigate('/dashboard')}
+                  className="h-10 px-5 bg-primary text-black hover:bg-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all whitespace-nowrap"
+                >
+                  Link Neural Hardware
+                  <ArrowRight className="ml-1.5" size={14} />
+                </Button>
               </div>
             </div>
           </div>

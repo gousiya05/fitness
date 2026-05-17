@@ -28,9 +28,10 @@ export default function Layout({ children }: LayoutProps) {
 
   const handleLogout = () => {
     localStorage.removeItem('user');
+    localStorage.removeItem('token');
     window.dispatchEvent(new Event('auth-change'));
-    navigate('/auth');
-    toast.info("Neural Link Severed.");
+    navigate('/');
+    toast.info("Neural Link Severed. Telemetry reset.");
   };
 
   const activeTab = navItems.find(item => location.pathname === item.path)?.id || 'dashboard';
