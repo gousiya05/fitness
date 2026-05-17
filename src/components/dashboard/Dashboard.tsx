@@ -18,11 +18,18 @@ import {
   Utensils,
   Loader2
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+
+  // Replace onClick handlers:
+  // In Active Fuel Protocol button:
+  // onClick={() => navigate('/diet')}
+  // In Neural Training Protocol button:
+  // onClick={() => navigate('/fitness')}
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
+import { useNavigate } from 'react-router-dom';
 import {
   AreaChart,
   Area,
@@ -65,6 +72,7 @@ const achievements = [
 ];
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [profile, setProfile] = React.useState<UserProfile | null>(null);
   const [metrics, setMetrics] = React.useState<BodyMetrics | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -224,7 +232,7 @@ export default function Dashboard() {
                   <p className="text-[10px] font-bold text-white/20 uppercase mt-1 tracking-widest">Optimized for {profile?.fitnessGoal?.replace('_', ' ') || 'maintenance'}</p>
                </div>
                <Button 
-                  onClick={() => window.location.href = '/diet'}
+                  onClick={() => navigate('/diet')}
                   variant="outline" 
                   className="rounded-xl border-white/10 hover:border-primary/40 bg-white/5 font-black uppercase italic text-[10px] tracking-widest"
                >
@@ -269,7 +277,7 @@ export default function Dashboard() {
                   <p className="text-[10px] font-bold text-white/20 uppercase mt-1 tracking-widest">Experience Level: {profile?.workoutExperience || 'Standard'}</p>
                </div>
                <Button 
-                  onClick={() => window.location.href = '/fitness'}
+                  onClick={() => navigate('/fitness')}
                   variant="outline" 
                   className="rounded-xl border-white/10 hover:border-primary/40 bg-white/5 font-black uppercase italic text-[10px] tracking-widest"
                >
