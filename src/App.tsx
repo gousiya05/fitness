@@ -13,6 +13,7 @@ import Home from './pages/Home';
 import Auth from './pages/Auth';
 import Diet from './pages/Diet';
 import Onboarding from './pages/Onboarding';
+import MlDashboard from './components/dashboard/MlDashboard';
 import { Toaster } from '@/components/ui/sonner';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -71,6 +72,7 @@ export default function App() {
         <Route path="/diet" element={<ProtectedRoute><Diet /></ProtectedRoute>} />
         <Route path="/tracker" element={<ProtectedRoute><CalorieTracker /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><Profile user={user} /></ProtectedRoute>} />
+        <Route path="/ml" element={<ProtectedRoute><MlDashboard /></ProtectedRoute>} />
         
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

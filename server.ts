@@ -1,5 +1,7 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
+import { exec } from "child_process";
 import { createServer as createViteServer } from "vite";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -42,7 +44,7 @@ const authenticate = (req: any, res: any, next: any) => {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = parseInt(process.env.PORT || "3000", 10);
   app.use(express.json());
 
   // Auth & Profile Routes
@@ -149,6 +151,97 @@ async function startServer() {
     } catch (error: any) { 
       console.error("Gemini Error:", error);
       res.status(500).json({ error: error.message }); 
+    }
+  });
+
+  // =============================================
+  // ML Pipeline Routes (no API keys required)
+  // =============================================
+  const mlBase = path.join(process.cwd(), 'ml');
+  const datasetsDir = path.join(mlBase, 'datasets');
+  if (!fs.existsSync(datasetsDir)) fs.mkdirSync(datasetsDir, { recursive: true });
+
+  // Upload dataset (CSV/JSON)
+  app.post('/api/ml/dataset', upload.single('file'), (req: any, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'No file provided' });
+      const filename = Date.now() + '_' + req.file.originalname;
+      const dest = path.join(datasetsDir, filename);
+      fs.writeFileSync(dest, req.file.buffer);
+      res.json({ ok: true, filename });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: 'Failed to upload dataset' });
+    }
+  });
+
+  // List uploaded datasets
+  app.get('/api/ml/datasets', (req, res) => {
+    try {
+      const files = fs.readdirSync(datasetsDir).filter((f: string) => !f.endsWith('.json') || f.includes('_'));
+      res.json({ datasets: files });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Failed to list datasets' });
+    }
+  });
+
+  // Delete a dataset
+  app.delete('/api/ml/dataset/:name', (req, res) => {
+    const filePath = path.join(datasetsDir, req.params.name);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      res.json({ deleted: true });
+    } else {
+      res.status(404).json({ error: 'Not found' });
+    }
+  });
+
+  // Trigger training
+  app.post('/api/ml/train', (req, res) => {
+    const datasetName = req.body?.dataset;
+    const cmd = datasetName
+      ? `npx tsx ml/train.ts "${datasetName}"`
+      : `npx tsx ml/train.ts`;
+    exec(cmd, { cwd: process.cwd() }, (error, stdout, stderr) => {
+      if (error) {
+        console.error('Training error:', stderr);
+        return res.status(500).json({ error: 'Training failed', details: stderr });
+      }
+      res.json({ ok: true, output: stdout });
+    });
+  });
+
+  // Predict using trained model (simple fallback if no model exists)
+  app.post('/api/ml/predict', (req, res) => {
+    try {
+      const { input } = req.body; // e.g. { input: [70] } for weight -> calorie prediction
+      const weight = Array.isArray(input) ? input[0] : input;
+      const modelPath = path.join(mlBase, 'model.json');
+
+      if (!fs.existsSync(modelPath)) {
+        // No trained model yet — return a simple formula-based estimate
+        const estimatedCalories = Math.round(weight * 15 + 500);
+        return res.json({
+          prediction: estimatedCalories,
+          source: 'formula-estimate',
+          note: 'No trained model found. Upload a dataset and train first for ML predictions.'
+        });
+      }
+
+      // Load the trained linear regression model
+      const model = JSON.parse(fs.readFileSync(modelPath, 'utf-8'));
+      const predicted = model.slope * weight + model.intercept;
+      return res.json({
+        prediction: Math.round(predicted),
+        source: 'trained-model',
+        modelType: model.type,
+        trainR2: model.trainR2,
+        testR2: model.testR2,
+        trainedAt: model.trainedAt,
+        dataset: model.dataset,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Prediction failed' });
     }
   });
 

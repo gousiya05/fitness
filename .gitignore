@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# ML pipeline
+ml/datasets/
+ml/model.json
+ml/weights.bin

@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, X, Home, Sparkles, ShieldCheck, Calculator, Flame, User, LogOut, Utensils, Activity } from 'lucide-react';
+import { Menu, X, Home, Sparkles, ShieldCheck, Calculator, Flame, User, LogOut, Utensils, Activity, BrainCircuit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -19,6 +19,7 @@ const navItems = [
   { id: 'diet', label: 'Diet', icon: Utensils, path: '/diet' },
   { id: 'tracker', label: 'Calories', icon: Flame, path: '/tracker' },
   { id: 'profile', label: 'Profile', icon: User, path: '/profile' },
+  { id: 'ml', label: 'ML Lab', icon: BrainCircuit, path: '/ml' },
 ];
 
 export default function Layout({ children }: LayoutProps) {

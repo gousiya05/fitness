@@ -2,6 +2,9 @@ import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import multer from "multer";
+import fs from "fs";
+import path from "path";
+import { exec } from "child_process";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { db } from "./lib/firebase";
@@ -210,3 +213,9 @@ app.post("/api/gemini/generate", async (req, res) => {
 });
 
 export default app;
+
+// Start the API server on a different port (default 4000) to avoid conflict with Vite's dev server.
+if (require.main === module) {
+  const PORT = process.env.PORT || 4000;
+  app.listen(PORT, () => console.log(`API server listening on http://localhost:${PORT}`));
+}
