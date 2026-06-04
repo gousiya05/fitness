@@ -3,10 +3,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { Flame, Activity, Zap, Scale, Clock, Heart, TrendingUp } from 'lucide-react';
+import { Flame, Activity, Zap, Scale, Clock, Heart, TrendingUp, Loader2, BrainCircuit, Sparkles, User, Thermometer } from 'lucide-react';
 import { motion } from 'motion/react';
+import { cn } from '@/lib/utils';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
+import { predictCalories } from '@/services/mlApiService';
+import { toast } from 'sonner';
 
 const weeklyData = [
   { day: 'Mon', calories: 2100 },
@@ -23,37 +25,81 @@ export default function CalorieTracker() {
     exercise: 'Running',
     duration: '30',
     heartRate: '145',
-    weight: '75'
+    weight: '75',
+    age: '25',
+    gender: 'Male',
+    height: '175',
+    bodyTemp: '37.0',
   });
 
   useEffect(() => {
     const stored = localStorage.getItem('userProfile');
     if (stored) {
       const p = JSON.parse(stored);
-      setMetrics(prev => ({ ...prev, weight: p.weight.toString() }));
+      setMetrics(prev => ({
+        ...prev,
+        weight: p.weight?.toString() || prev.weight,
+        age: p.age?.toString() || prev.age,
+        gender: p.gender === 'female' ? 'Female' : 'Male',
+        height: p.height?.toString() || prev.height,
+      }));
     }
   }, []);
   
   const [prediction, setPrediction] = useState<{
     burned: number,
     fatBurn: number,
-    intensity: string
+    intensity: string,
+    modelUsed: boolean,
   } | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const calculateBurn = () => {
+  const calculateBurn = async () => {
     const duration = parseFloat(metrics.duration);
     const hr = parseFloat(metrics.heartRate);
     const weight = parseFloat(metrics.weight);
-    
-    // Simple MET-like calculation
-    const burned = (duration * hr * weight * 0.0005).toFixed(1);
-    const fatBurn = (parseFloat(burned) * 0.15).toFixed(1);
-    
-    setPrediction({
-      burned: parseFloat(burned),
-      fatBurn: parseFloat(fatBurn),
-      intensity: hr > 150 ? 'PEAK' : hr > 130 ? 'CARDIO' : 'FAT BURN'
-    });
+    const age = parseFloat(metrics.age);
+    const height = parseFloat(metrics.height);
+    const bodyTemp = parseFloat(metrics.bodyTemp);
+
+    if (!(duration > 0 && hr > 0 && weight > 0)) {
+      toast.error('Enter valid exercise metrics.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await predictCalories({
+        gender: metrics.gender,
+        age,
+        height,
+        weight,
+        duration,
+        heart_rate: hr,
+        body_temp: bodyTemp,
+      });
+      setPrediction({
+        burned: result.calories_burned,
+        fatBurn: result.fat_burn_grams,
+        intensity: result.intensity,
+        modelUsed: result.model_used,
+      });
+      toast.success(result.model_used ? 'ML Model prediction complete.' : 'Calorie estimate (fallback formula).');
+    } catch (error) {
+      // Fallback to local calculation
+      console.warn('ML API unreachable, using local calculation:', error);
+      const burned = parseFloat((duration * hr * weight * 0.0005).toFixed(1));
+      const fatBurn = parseFloat((burned * 0.15).toFixed(1));
+      setPrediction({
+        burned,
+        fatBurn,
+        intensity: hr > 150 ? 'PEAK' : hr > 130 ? 'CARDIO' : 'FAT BURN',
+        modelUsed: false,
+      });
+      toast.warning('Using offline calculation — ML backend unavailable.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -65,48 +111,114 @@ export default function CalorieTracker() {
               <Zap size={20} className="text-primary" />
               Calorie AI
             </CardTitle>
-            <CardDescription className="text-white/40">Predictive burn analysis</CardDescription>
+            <CardDescription className="text-white/40 flex items-center gap-2">
+              Predictive burn analysis
+              <Badge className="bg-purple-500/10 text-purple-400 border-purple-500/20 text-[8px] font-black uppercase tracking-wider px-2 py-0.5">
+                <BrainCircuit size={10} className="mr-1" />
+                ML Powered
+              </Badge>
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Gender selector */}
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-white/30">Exercise Protocol</label>
-              <div className="relative">
-                 <Activity size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-primary/50" />
-                 <Input 
-                   value={metrics.exercise} 
-                   onChange={(e) => setMetrics({...metrics, exercise: e.target.value})}
-                   className="pl-10 glass h-12 rounded-xl font-bold"
-                 />
+              <label className="text-[10px] font-black uppercase tracking-widest text-white/30">Gender</label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setMetrics({ ...metrics, gender: 'Male' })}
+                  className={cn(
+                    "h-10 rounded-xl font-black uppercase text-xs transition-all border",
+                    metrics.gender === 'Male'
+                      ? "bg-primary/20 border-primary/40 text-primary"
+                      : "glass border-white/5 text-white/40 hover:border-white/20"
+                  )}
+                >
+                  Male
+                </button>
+                <button
+                  onClick={() => setMetrics({ ...metrics, gender: 'Female' })}
+                  className={cn(
+                    "h-10 rounded-xl font-black uppercase text-xs transition-all border",
+                    metrics.gender === 'Female'
+                      ? "bg-pink-500/20 border-pink-500/40 text-pink-400"
+                      : "glass border-white/5 text-white/40 hover:border-white/20"
+                  )}
+                >
+                  Female
+                </button>
               </div>
             </div>
-            
+
+            {/* Age & Height */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-white/30">Age (yrs)</label>
+                <div className="relative">
+                  <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-primary/50" />
+                  <Input value={metrics.age} onChange={(e) => setMetrics({...metrics, age: e.target.value})} className="pl-10 glass h-10 rounded-xl font-bold" type="number" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-white/30">Height (cm)</label>
+                <div className="relative">
+                  <Activity size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-primary/50" />
+                  <Input value={metrics.height} onChange={(e) => setMetrics({...metrics, height: e.target.value})} className="pl-10 glass h-10 rounded-xl font-bold" type="number" />
+                </div>
+              </div>
+            </div>
+
+            {/* Duration & Heart Rate */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-widest text-white/30">Duration (Min)</label>
                 <div className="relative">
                   <Clock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-primary/50" />
-                  <Input value={metrics.duration} onChange={(e) => setMetrics({...metrics, duration: e.target.value})} className="pl-10 glass h-12 rounded-xl font-bold" type="number" />
+                  <Input value={metrics.duration} onChange={(e) => setMetrics({...metrics, duration: e.target.value})} className="pl-10 glass h-10 rounded-xl font-bold" type="number" />
                 </div>
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-widest text-white/30">Heart Rate (Avg)</label>
                 <div className="relative">
                   <Heart size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-primary/50" />
-                  <Input value={metrics.heartRate} onChange={(e) => setMetrics({...metrics, heartRate: e.target.value})} className="pl-10 glass h-12 rounded-xl font-bold" type="number" />
+                  <Input value={metrics.heartRate} onChange={(e) => setMetrics({...metrics, heartRate: e.target.value})} className="pl-10 glass h-10 rounded-xl font-bold" type="number" />
                 </div>
               </div>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-white/30">Body Weight (kg)</label>
-              <div className="relative">
-                <Scale size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-primary/50" />
-                <Input value={metrics.weight} onChange={(e) => setMetrics({...metrics, weight: e.target.value})} className="pl-10 glass h-12 rounded-xl font-bold" type="number" />
+            {/* Weight & Body Temp */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-white/30">Body Weight (kg)</label>
+                <div className="relative">
+                  <Scale size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-primary/50" />
+                  <Input value={metrics.weight} onChange={(e) => setMetrics({...metrics, weight: e.target.value})} className="pl-10 glass h-10 rounded-xl font-bold" type="number" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-white/30">Body Temp (°C)</label>
+                <div className="relative">
+                  <Thermometer size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-primary/50" />
+                  <Input value={metrics.bodyTemp} onChange={(e) => setMetrics({...metrics, bodyTemp: e.target.value})} className="pl-10 glass h-10 rounded-xl font-bold" type="number" step="0.1" />
+                </div>
               </div>
             </div>
 
-            <Button onClick={calculateBurn} className="w-full h-14 bg-primary text-black font-black uppercase italic rounded-2xl neon-glow">
-               Run AI Inference
+            <Button
+              onClick={calculateBurn}
+              disabled={loading}
+              className="w-full h-14 bg-primary text-black font-black uppercase italic rounded-2xl neon-glow"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="animate-spin mr-2" size={20} />
+                  Predicting...
+                </>
+              ) : (
+                <>
+                  <Sparkles size={20} className="mr-2" />
+                  Run AI Inference
+                </>
+              )}
             </Button>
           </CardContent>
         </Card>
@@ -119,9 +231,17 @@ export default function CalorieTracker() {
                 <div className="text-7xl font-black italic tracking-tighter text-white">{prediction?.burned || 0}</div>
                 <div className="text-xs font-black uppercase text-primary mt-2">KCal Estimated</div>
                 {prediction && (
-                   <Badge className="mt-4 bg-primary/20 text-primary border-primary/20 uppercase font-black text-[10px]">
-                     {prediction.intensity} INTENSITY
-                   </Badge>
+                  <>
+                    <Badge className="mt-4 bg-primary/20 text-primary border-primary/20 uppercase font-black text-[10px]">
+                      {prediction.intensity} INTENSITY
+                    </Badge>
+                    {prediction.modelUsed && (
+                      <Badge className="mt-2 bg-purple-500/10 text-purple-400 border-purple-500/20 text-[8px] font-black uppercase tracking-wider px-3 py-1">
+                        <BrainCircuit size={10} className="mr-1" />
+                        ML Model
+                      </Badge>
+                    )}
+                  </>
                 )}
              </Card>
 

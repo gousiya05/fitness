@@ -3,10 +3,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Calculator, Scale, Ruler, Activity, TrendingUp, AlertCircle, Apple, Dumbbell } from 'lucide-react';
+import { Calculator, Scale, Ruler, Activity, TrendingUp, AlertCircle, Apple, Dumbbell, Loader2, BrainCircuit, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts';
+import { predictBMI } from '@/services/mlApiService';
+import { toast } from 'sonner';
 
 const dummyHistory = [
   { day: 'Mon', bmi: 24.5 },
@@ -22,23 +24,42 @@ export default function BMICalculator() {
   const [weight, setWeight] = useState<string>('75');
   const [height, setHeight] = useState<string>('180');
   const [age, setAge] = useState<string>('25');
+  const [gender, setGender] = useState<string>('Male');
   const [bmi, setBmi] = useState<number | null>(null);
   const [category, setCategory] = useState<string>('');
   const [risk, setRisk] = useState<string>('');
   const [calorieIntake, setCalorieIntake] = useState<number>(0);
+  const [loading, setLoading] = useState(false);
+  const [modelUsed, setModelUsed] = useState(false);
 
-  const calculateBMI = () => {
+  const calculateBMI = async () => {
     const w = parseFloat(weight);
-    const h = parseFloat(height) / 100;
-    const a = parseInt(age);
-    if (w > 0 && h > 0) {
-      const result = w / (h * h);
+    const h = parseFloat(height);
+    if (!(w > 0 && h > 0)) {
+      toast.error('Enter valid weight and height.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await predictBMI({ gender, height: h, weight: w });
+      setBmi(result.bmi_value);
+      setCategory(result.category);
+      setRisk(result.risk);
+      setCalorieIntake(result.calorie_intake);
+      setModelUsed(result.model_used);
+      toast.success(result.model_used ? 'ML Model prediction complete.' : 'BMI calculated (fallback formula).');
+    } catch (error) {
+      // Fallback to local calculation if API is unreachable
+      console.warn('ML API unreachable, using local calculation:', error);
+      const hm = h / 100;
+      const result = w / (hm * hm);
       const roundedBmi = parseFloat(result.toFixed(1));
       setBmi(roundedBmi);
-      
-      // Calculate BMR (Mifflin-St Jeor) - simple version
-      const bmr = 10 * w + 6.25 * (h * 100) - 5 * a + 5;
-      setCalorieIntake(Math.round(bmr * 1.55)); // Moderately active
+      setModelUsed(false);
+
+      const bmr = 10 * w + 6.25 * h - 5 * parseInt(age) + (gender === 'Male' ? 5 : -161);
+      setCalorieIntake(Math.round(bmr * 1.55));
 
       if (result < 18.5) {
         setCategory('Underweight');
@@ -53,6 +74,9 @@ export default function BMICalculator() {
         setCategory('Obese');
         setRisk('High cardiovascular warning.');
       }
+      toast.warning('Using offline calculation — ML backend unavailable.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -71,9 +95,42 @@ export default function BMICalculator() {
               <Calculator className="text-primary" />
               BMI Intel
             </CardTitle>
-            <CardDescription className="text-white/40">Neural biometric assessment</CardDescription>
+            <CardDescription className="text-white/40 flex items-center gap-2">
+              Neural biometric assessment
+              <Badge className="bg-purple-500/10 text-purple-400 border-purple-500/20 text-[8px] font-black uppercase tracking-wider px-2 py-0.5">
+                <BrainCircuit size={10} className="mr-1" />
+                ML Powered
+              </Badge>
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-white/30">Gender</label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setGender('Male')}
+                  className={cn(
+                    "h-12 rounded-xl font-black uppercase text-sm transition-all border",
+                    gender === 'Male'
+                      ? "bg-primary/20 border-primary/40 text-primary"
+                      : "glass border-white/5 text-white/40 hover:border-white/20"
+                  )}
+                >
+                  Male
+                </button>
+                <button
+                  onClick={() => setGender('Female')}
+                  className={cn(
+                    "h-12 rounded-xl font-black uppercase text-sm transition-all border",
+                    gender === 'Female'
+                      ? "bg-pink-500/20 border-pink-500/40 text-pink-400"
+                      : "glass border-white/5 text-white/40 hover:border-white/20"
+                  )}
+                >
+                  Female
+                </button>
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-widest text-white/30">Weight (kg)</label>
@@ -97,8 +154,22 @@ export default function BMICalculator() {
                 <Input value={age} onChange={(e) => setAge(e.target.value)} className="pl-10 h-12 glass border-white/5 rounded-xl text-lg font-bold" type="number" />
               </div>
             </div>
-            <Button onClick={calculateBMI} className="w-full h-14 bg-primary hover:bg-primary/90 text-black font-black uppercase italic rounded-2xl neon-glow">
-              Engage Neural Scan
+            <Button
+              onClick={calculateBMI}
+              disabled={loading}
+              className="w-full h-14 bg-primary hover:bg-primary/90 text-black font-black uppercase italic rounded-2xl neon-glow"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="animate-spin mr-2" size={20} />
+                  Analyzing...
+                </>
+              ) : (
+                <>
+                  <Sparkles size={20} className="mr-2" />
+                  Engage Neural Scan
+                </>
+              )}
             </Button>
           </CardContent>
         </Card>
@@ -125,6 +196,14 @@ export default function BMICalculator() {
                       )}>
                         {category} Range
                       </Badge>
+                      {modelUsed && (
+                        <div className="mt-3">
+                          <Badge className="bg-purple-500/10 text-purple-400 border-purple-500/20 text-[8px] font-black uppercase tracking-wider px-3 py-1">
+                            <BrainCircuit size={10} className="mr-1" />
+                            ML Model Prediction
+                          </Badge>
+                        </div>
+                      )}
                     </div>
 
                     <div className="mt-12 space-y-2">
@@ -186,7 +265,7 @@ export default function BMICalculator() {
               <Card className="glass-card h-[400px] flex items-center justify-center border-dashed text-center p-12">
                 <div>
                   <TrendingUp size={48} className="mx-auto text-white/10 mb-6" />
-                  <h3 className="text-2xl font-bold text-white/20 uppercase italic italic">Awaiting Telemetry Data</h3>
+                  <h3 className="text-2xl font-bold text-white/20 uppercase italic">Awaiting Telemetry Data</h3>
                   <p className="text-white/10 mt-2">Enter your dimensions to start historical tracking</p>
                 </div>
               </Card>

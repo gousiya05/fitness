@@ -17,6 +17,7 @@ import {
   Timer
 } from 'lucide-react';
 import { generateContent } from '@/services/geminiService';
+import { recommendWorkout, type WorkoutResponse } from '@/services/mlApiService';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -45,12 +46,19 @@ interface WorkoutPlan {
 
 export default function WorkoutRecommendations() {
   const [loading, setLoading] = useState(false);
+  const [mlLoading, setMlLoading] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [metrics, setMetrics] = useState<BodyMetrics | null>(null);
   const [plan, setPlan] = useState<WorkoutPlan | null>(null);
+  const [mlPlan, setMlPlan] = useState<WorkoutResponse | null>(null);
+  const [activeTab, setActiveTab] = useState<'ml' | 'ai'>('ml');
 
-  const exercises = plan?.exercises ?? [];
-  const weeklySchedule = plan?.weekly_schedule ?? [];
+  const exercises = activeTab === 'ml' && mlPlan
+    ? mlPlan.exercises
+    : plan?.exercises ?? [];
+  const weeklySchedule = activeTab === 'ml' && mlPlan
+    ? mlPlan.weekly_plan
+    : plan?.weekly_schedule ?? [];
   const recoverySuggestions = plan?.recovery_suggestions ?? [];
 
   useEffect(() => {
@@ -62,6 +70,36 @@ export default function WorkoutRecommendations() {
     }
   }, []);
 
+  // ML Model-based recommendation
+  const getMlWorkoutPlan = async () => {
+    if (!profile) {
+      toast.error("User context missing.");
+      return;
+    }
+    setMlLoading(true);
+    try {
+      const result = await recommendWorkout({
+        age: profile.age,
+        gender: profile.gender === 'female' ? 'Female' : 'Male',
+        weight: profile.weight,
+        height: profile.height,
+        fitness_goal: profile.fitnessGoal,
+        experience_level: profile.workoutExperience,
+      });
+      setMlPlan(result);
+      setActiveTab('ml');
+      toast.success(result.model_used
+        ? 'ML Model workout generated.'
+        : 'Workout plan generated (rule-based).');
+    } catch (error) {
+      console.error(error);
+      toast.error("ML backend unavailable. Try Gemini AI instead.");
+    } finally {
+      setMlLoading(false);
+    }
+  };
+
+  // Gemini AI-based recommendation
   const getWorkoutPlan = async () => {
     if (!profile) {
       toast.error("User context missing.");
@@ -93,6 +131,7 @@ export default function WorkoutRecommendations() {
       
       const result = await generateContent(prompt, "You are a world-class AI fitness architect specializing in hypertrophy and neural conditioning. Provide precision data in JSON format.");
       setPlan(result);
+      setActiveTab('ai');
       toast.success("Workout protocols synced.");
     } catch (error) {
       console.error(error);
@@ -109,15 +148,57 @@ export default function WorkoutRecommendations() {
            <Badge className="bg-primary/5 text-primary border-primary/20 mb-4 px-4 py-1.5 uppercase font-black italic tracking-widest text-[10px]">Neural Protocol Engine v6.0</Badge>
            <h1 className="text-5xl md:text-7xl font-black italic tracking-tighter uppercase leading-[0.8]">Neural <br/> <span className="text-primary text-neon">Training</span></h1>
         </div>
-        <Button 
-          onClick={getWorkoutPlan} 
-          className="h-16 px-12 bg-primary text-black font-black uppercase italic rounded-2xl text-xl shadow-2xl neon-glow active:scale-95 transition-all group"
-          disabled={loading || !profile}
-        >
-          {loading ? <Loader2 className="animate-spin mr-2" /> : <Sparkles size={24} className="mr-2 group-hover:scale-125 transition-transform" />}
-          {loading ? "Calculating Load..." : "Optimize Routine"}
-        </Button>
+        <div className="flex gap-3">
+          <Button 
+            onClick={getMlWorkoutPlan} 
+            className="h-16 px-8 bg-purple-600 hover:bg-purple-700 text-white font-black uppercase italic rounded-2xl text-lg shadow-2xl active:scale-95 transition-all group"
+            disabled={mlLoading || !profile}
+          >
+            {mlLoading ? <Loader2 className="animate-spin mr-2" /> : <BrainCircuit size={24} className="mr-2 group-hover:scale-125 transition-transform" />}
+            {mlLoading ? "Predicting..." : "ML Model"}
+          </Button>
+          <Button 
+            onClick={getWorkoutPlan} 
+            className="h-16 px-8 bg-primary text-black font-black uppercase italic rounded-2xl text-lg shadow-2xl neon-glow active:scale-95 transition-all group"
+            disabled={loading || !profile}
+          >
+            {loading ? <Loader2 className="animate-spin mr-2" /> : <Sparkles size={24} className="mr-2 group-hover:scale-125 transition-transform" />}
+            {loading ? "Calculating Load..." : "Gemini AI"}
+          </Button>
+        </div>
       </section>
+
+      {/* Active source indicator */}
+      {(mlPlan || plan) && (
+        <div className="flex gap-2">
+          <button
+            onClick={() => mlPlan && setActiveTab('ml')}
+            className={cn(
+              "px-6 py-2 rounded-full text-xs font-black uppercase transition-all",
+              activeTab === 'ml'
+                ? "bg-purple-600 text-white shadow-lg"
+                : "bg-white/5 text-white/40 hover:bg-white/10"
+            )}
+            disabled={!mlPlan}
+          >
+            <BrainCircuit size={12} className="inline mr-1.5" />
+            ML Model
+          </button>
+          <button
+            onClick={() => plan && setActiveTab('ai')}
+            className={cn(
+              "px-6 py-2 rounded-full text-xs font-black uppercase transition-all",
+              activeTab === 'ai'
+                ? "bg-primary text-black shadow-lg"
+                : "bg-white/5 text-white/40 hover:bg-white/10"
+            )}
+            disabled={!plan}
+          >
+            <Sparkles size={12} className="inline mr-1.5" />
+            Gemini AI
+          </button>
+        </div>
+      )}
 
       {profile && metrics && (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -155,10 +236,35 @@ export default function WorkoutRecommendations() {
         </div>
       )}
 
+      {/* ML Plan Summary */}
+      {mlPlan && activeTab === 'ml' && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="grid gap-4 md:grid-cols-3"
+        >
+          <Card className="glass-card p-6 border-purple-500/20 bg-purple-500/5">
+            <div className="text-[8px] font-black uppercase tracking-[0.4em] text-purple-400 mb-1">Workout Type</div>
+            <div className="text-xl font-black italic uppercase tracking-tighter">{mlPlan.workout_type}</div>
+          </Card>
+          <Card className="glass-card p-6 border-purple-500/20 bg-purple-500/5">
+            <div className="text-[8px] font-black uppercase tracking-[0.4em] text-purple-400 mb-1">Intensity</div>
+            <div className="text-xl font-black italic uppercase tracking-tighter">{mlPlan.intensity}</div>
+          </Card>
+          <Card className="glass-card p-6 border-purple-500/20 bg-purple-500/5">
+            <div className="text-[8px] font-black uppercase tracking-[0.4em] text-purple-400 mb-1">Source</div>
+            <div className="text-xl font-black italic uppercase tracking-tighter flex items-center gap-2">
+              <BrainCircuit size={20} />
+              {mlPlan.model_used ? 'ML Model' : 'Rule Engine'}
+            </div>
+          </Card>
+        </motion.div>
+      )}
+
       <div className="grid gap-8 lg:grid-cols-12">
         {/* Weekly Timeline */}
         <div className="lg:col-span-4 space-y-8">
-           {plan ? (
+           {(activeTab === 'ml' ? mlPlan : plan) ? (
              <Card className="glass-card p-8 border-white/5">
                 <div className="flex items-center gap-3 mb-8">
                    <Calendar className="text-primary" size={24} />
@@ -190,7 +296,7 @@ export default function WorkoutRecommendations() {
              </Card>
            )}
 
-           {plan && (
+           {plan && activeTab === 'ai' && (
              <Card className="glass-card p-8 bg-primary/5 border-primary/20">
                 <div className="flex items-center gap-3 mb-6">
                    <Info size={20} className="text-primary" />
@@ -211,7 +317,7 @@ export default function WorkoutRecommendations() {
         {/* Exercises */}
         <div className="lg:col-span-8">
            <AnimatePresence mode="wait">
-             {!plan ? (
+             {!(activeTab === 'ml' ? mlPlan : plan) ? (
                <Card className="glass-card h-full flex flex-col items-center justify-center text-center p-12 border-dashed border-white/10">
                   <div className="h-24 w-24 rounded-[2rem] bg-white/5 flex items-center justify-center text-white/10 mb-8 border border-white/5">
                     <Dumbbell size={48} />
@@ -221,7 +327,7 @@ export default function WorkoutRecommendations() {
                </Card>
              ) : (
                <motion.div 
-                 key="exercises"
+                 key={`exercises-${activeTab}`}
                  initial={{ opacity: 0, y: 20 }}
                  animate={{ opacity: 1, y: 0 }}
                  className="space-y-6"
@@ -229,27 +335,40 @@ export default function WorkoutRecommendations() {
                  <div className="flex items-center justify-between px-2">
                     <h3 className="text-sm font-black uppercase tracking-[0.3em] text-white/30">Movement Matrix</h3>
                     <div className="flex items-center gap-6">
-                       <div className="flex items-center gap-2">
-                          <Timer size={14} className="text-primary" />
-                          <span className="text-[10px] font-black uppercase tracking-widest text-white/60">{plan.duration}</span>
-                       </div>
-                       <div className="flex items-center gap-2">
-                          <Activity size={14} className="text-orange-500" />
-                          <span className="text-[10px] font-black uppercase tracking-widest text-white/60">{plan.calories_target} KCAL</span>
-                       </div>
+                       {activeTab === 'ai' && plan && (
+                         <>
+                           <div className="flex items-center gap-2">
+                              <Timer size={14} className="text-primary" />
+                              <span className="text-[10px] font-black uppercase tracking-widest text-white/60">{plan.duration}</span>
+                           </div>
+                           <div className="flex items-center gap-2">
+                              <Activity size={14} className="text-orange-500" />
+                              <span className="text-[10px] font-black uppercase tracking-widest text-white/60">{plan.calories_target} KCAL</span>
+                           </div>
+                         </>
+                       )}
+                       {activeTab === 'ml' && mlPlan && (
+                         <Badge className="bg-purple-500/10 text-purple-400 border-purple-500/20 text-[8px] font-black uppercase tracking-wider px-3 py-1">
+                           <BrainCircuit size={10} className="mr-1" />
+                           {mlPlan.model_used ? 'ML Prediction' : 'Rule Engine'}
+                         </Badge>
+                       )}
                     </div>
                  </div>
 
                  <div className="grid gap-4">
                    {exercises.map((ex, i) => (
                      <motion.div
-                       key={i}
+                       key={`${activeTab}-${i}`}
                        initial={{ opacity: 0, x: 20 }}
                        animate={{ opacity: 1, x: 0 }}
                        transition={{ delay: i * 0.1 }}
                      >
                         <Card className="glass-card group hover:bg-white/[0.04] transition-all border-none relative overflow-hidden">
-                           <div className="absolute top-0 left-0 h-full w-1.5 bg-primary/20 group-hover:bg-primary transition-all" />
+                           <div className={cn(
+                             "absolute top-0 left-0 h-full w-1.5 group-hover:bg-primary transition-all",
+                             activeTab === 'ml' ? "bg-purple-500/20 group-hover:bg-purple-500" : "bg-primary/20"
+                           )} />
                            <CardContent className="p-8 flex flex-col md:flex-row md:items-center justify-between gap-8">
                               <div className="flex items-center gap-6">
                                  <div className="h-16 w-16 rounded-2xl bg-white/5 border border-white/5 flex items-center justify-center text-primary group-hover:scale-110 transition-transform shadow-xl">
@@ -283,12 +402,21 @@ export default function WorkoutRecommendations() {
                           <Trophy size={160} />
                        </div>
                        <div className="flex flex-col md:flex-row items-center gap-8 text-center md:text-left">
-                          <div className="h-20 w-20 rounded-[2rem] bg-primary flex items-center justify-center text-black shadow-2xl">
-                             <Sparkles size={40} />
+                          <div className={cn(
+                            "h-20 w-20 rounded-[2rem] flex items-center justify-center text-black shadow-2xl",
+                            activeTab === 'ml' ? "bg-purple-500" : "bg-primary"
+                          )}>
+                             {activeTab === 'ml' ? <BrainCircuit size={40} /> : <Sparkles size={40} />}
                           </div>
                           <div>
-                             <h4 className="text-2xl font-black italic uppercase tracking-tighter mb-2">Neural Recommendation</h4>
-                             <p className="text-white/40 font-medium max-w-2xl leading-relaxed italic">{plan.recommendation}</p>
+                             <h4 className="text-2xl font-black italic uppercase tracking-tighter mb-2">
+                               {activeTab === 'ml' ? 'ML Recommendation' : 'Neural Recommendation'}
+                             </h4>
+                             <p className="text-white/40 font-medium max-w-2xl leading-relaxed italic">
+                               {activeTab === 'ml' && mlPlan
+                                 ? mlPlan.recommendation
+                                 : plan?.recommendation}
+                             </p>
                           </div>
                        </div>
                     </Card>

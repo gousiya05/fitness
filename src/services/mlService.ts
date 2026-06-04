@@ -1,20 +1,8 @@
-import * as tf from '@tensorflow/tfjs-node';
+/**
+ * mlService.ts — Legacy stub kept for backward compatibility.
+ * The .pkl ML models are now served via the FastAPI Python backend.
+ * Use mlApiService.ts for all ML predictions.
+ * @deprecated Use mlApiService.ts instead
+ */
 
-let model: tf.LayersModel | null = null;
-
-export async function loadModel() {
-  if (!model) {
-    // Loads the model saved in ./ml/model.json relative to project root
-    model = await tf.loadLayersModel('file://' + process.cwd() + '/ml/model.json');
-  }
-  return model;
-}
-
-export async function predict(input: number[]) {
-  await loadModel();
-  if (!model) throw new Error('Model not loaded');
-  const tensor = tf.tensor2d([input]);
-  const pred = model.predict(tensor) as tf.Tensor;
-  const result = (await pred.data())[0];
-  return result;
-}
+export {} // Prevents "isolatedModules" errors — this file is intentionally empty.

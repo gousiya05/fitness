@@ -77,6 +77,7 @@ export default function Dashboard() {
   const [profile, setProfile] = React.useState<UserProfile | null>(null);
   const [metrics, setMetrics] = React.useState<BodyMetrics | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [progressData, setProgressData] = React.useState<any[]>([]);
 
   React.useEffect(() => {
     const fetchProfile = async () => {
@@ -112,8 +113,19 @@ export default function Dashboard() {
             setMetrics(calculateMetrics(p));
           }
         }
+
+        // Fetch Progress Data
+        const progRes = await fetch('/api/progress', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (progRes.ok) {
+          const pData = await progRes.json();
+          if (pData && pData.length > 0) {
+            setProgressData(pData);
+          }
+        }
       } catch (err) {
-        console.error("Failed to fetch profile:", err);
+        console.error("Failed to fetch profile or progress:", err);
       } finally {
         setLoading(false);
       }
@@ -132,11 +144,21 @@ export default function Dashboard() {
   }
 
   const stats = [
-    { label: 'Body Mass Index', val: metrics?.bmi || '24.2', icon: Activity, sub: 'HEALTH_INDEX', color: 'text-primary' },
+    { label: 'Body Mass Index', val: progressData.length > 0 ? progressData[progressData.length - 1].bmi.toFixed(1) : (metrics?.bmi || '24.2'), icon: Activity, sub: 'HEALTH_INDEX', color: 'text-primary' },
     { label: 'Energy Expenditure', val: metrics ? `${metrics.tdee}` : '2.4k', unit: 'KCAL', icon: Flame, sub: 'Daily Target', color: 'text-orange-500' },
     { label: 'Mass Goal', val: profile ? (profile.fitnessGoal === 'muscle_gain' ? 'Gain' : profile.fitnessGoal === 'fat_loss' ? 'Shred' : 'Stasis') : 'Cut', icon: TrendingUp, sub: 'Objective', color: 'text-blue-500' },
     { label: 'Hydration Target', val: metrics?.water || '3.5', unit: 'LITERS', icon: Target, sub: 'Optimal Fluid', color: 'text-cyan-500' },
   ];
+
+  const chartCalorieData = progressData.length > 0 ? progressData.map(p => ({
+    name: new Date(p.date).toLocaleDateString('en-US', { weekday: 'short' }),
+    calories: p.caloriesBurned || p.caloriesConsumed || 2000
+  })) : calorieData;
+
+  const chartWeightData = progressData.length > 0 ? progressData.map((p, i) => ({
+    week: `D${i+1}`,
+    weight: p.weight
+  })) : weightHistory;
 
   return (
     <div className="space-y-10 pb-20 relative">
@@ -325,7 +347,7 @@ export default function Dashboard() {
           </div>
           <div className="h-[300px] w-full pt-4">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={calorieData}>
+              <AreaChart data={chartCalorieData}>
                 <defs>
                   <linearGradient id="colorCalories" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#ea580c" stopOpacity={0.4}/>
@@ -404,15 +426,15 @@ export default function Dashboard() {
              </div>
              <div className="h-[220px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                   <BarChart data={weightHistory}>
+                   <BarChart data={chartWeightData}>
                       <XAxis dataKey="week" stroke="#ffffff10" fontSize={10} tickLine={false} axisLine={false} dy={10} />
                       <Tooltip 
                         cursor={{fill: '#ffffff05'}}
                         contentStyle={{ backgroundColor: '#000', border: 'none', borderRadius: '20px', padding: '12px' }}
                       />
                       <Bar dataKey="weight" radius={[6, 6, 0, 0]} barSize={24}>
-                         {weightHistory.map((_, index) => (
-                           <Cell key={index} className="transition-all duration-500" fill={index === weightHistory.length - 1 ? '#ea580c' : '#ffffff10'} />
+                         {chartWeightData.map((_, index) => (
+                           <Cell key={index} className="transition-all duration-500" fill={index === chartWeightData.length - 1 ? '#ea580c' : '#ffffff10'} />
                          ))}
                       </Bar>
                    </BarChart>

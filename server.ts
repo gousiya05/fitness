@@ -9,7 +9,14 @@ import multer from "multer";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
+import helmet from "helmet";
+import cors from "cors";
+import morgan from "morgan";
+import rateLimit from "express-rate-limit";
+import { z } from "zod";
 import { User } from "./api/models/User";
+import { Progress } from "./api/models/Progress";
+import { WorkoutHistory } from "./api/models/WorkoutHistory";
 
 dotenv.config();
 
@@ -42,15 +49,37 @@ const authenticate = (req: any, res: any, next: any) => {
   } catch (err) { res.status(401).json({ error: "Invalid token" }); }
 };
 
+const registerSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+  firstName: z.string().optional(),
+  lastName: z.string().optional()
+});
+
 async function startServer() {
   const app = express();
   const PORT = parseInt(process.env.PORT || "3000", 10);
+  
+  app.use(helmet({ contentSecurityPolicy: false })); // Disabled CSP for local Vite dev
+  app.use(cors());
+  app.use(morgan('dev'));
   app.use(express.json());
 
+  const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    message: { error: "Too many requests from this IP, please try again after 15 minutes" }
+  });
+
+  app.use("/api/auth", apiLimiter);
+  app.use("/api/ml", apiLimiter);
+  app.use("/api/gemini", apiLimiter);
+
   // Auth & Profile Routes
-  app.post("/api/auth/register", async (req, res) => {
+  app.post("/api/auth/register", async (req, res, next) => {
     try {
-      const { email, password, firstName, lastName } = req.body;
+      const validated = registerSchema.parse(req.body);
+      const { email, password, firstName, lastName } = validated;
       if (USE_MONGODB) {
         const existingUser = await User.findOne({ email });
         if (existingUser) return res.status(400).json({ error: "User already exists" });
@@ -62,7 +91,9 @@ async function startServer() {
         const token = jwt.sign({ userId: email }, JWT_SECRET);
         res.json({ token, user: { email, firstName, lastName, onboarded: false } });
       }
-    } catch (error: any) { res.status(500).json({ error: error.message }); }
+    } catch (error: any) { 
+      next(error);
+    }
   });
 
   app.post("/api/auth/login", async (req, res) => {
@@ -96,6 +127,44 @@ async function startServer() {
     try {
       if (USE_MONGODB) await User.findOneAndUpdate({ email: req.userId }, { ...req.body, onboarded: true });
       res.json({ success: true });
+    } catch (error: any) { res.status(500).json({ error: error.message }); }
+  });
+
+  // Progress Routes
+  app.get("/api/progress", authenticate, async (req: any, res) => {
+    try {
+      if (USE_MONGODB) {
+        const progress = await Progress.find({ email: req.userId }).sort({ date: 1 }).limit(30);
+        res.json(progress);
+      } else { res.json([]); }
+    } catch (error: any) { res.status(500).json({ error: error.message }); }
+  });
+
+  app.post("/api/progress", authenticate, async (req: any, res) => {
+    try {
+      if (USE_MONGODB) {
+        const newProgress = await Progress.create({ email: req.userId, ...req.body });
+        res.json(newProgress);
+      } else { res.json({ success: true }); }
+    } catch (error: any) { res.status(500).json({ error: error.message }); }
+  });
+
+  // Workout History Routes
+  app.get("/api/workout-history", authenticate, async (req: any, res) => {
+    try {
+      if (USE_MONGODB) {
+        const history = await WorkoutHistory.find({ email: req.userId }).sort({ date: -1 }).limit(50);
+        res.json(history);
+      } else { res.json([]); }
+    } catch (error: any) { res.status(500).json({ error: error.message }); }
+  });
+
+  app.post("/api/workout-history", authenticate, async (req: any, res) => {
+    try {
+      if (USE_MONGODB) {
+        const newWorkout = await WorkoutHistory.create({ email: req.userId, ...req.body });
+        res.json(newWorkout);
+      } else { res.json({ success: true }); }
     } catch (error: any) { res.status(500).json({ error: error.message }); }
   });
 
@@ -245,6 +314,65 @@ async function startServer() {
     }
   });
 
+  // Polyfills for missing Python ML endpoints
+  app.get('/api/ml/health', (req, res) => {
+    res.json({
+      status: 'healthy',
+      models_loaded: { 'Node.js Fallback': true },
+      total_loaded: 1,
+      endpoints: ['/predict-bmi', '/predict-calories', '/recommend-workout']
+    });
+  });
+
+  app.post('/api/ml/predict-bmi', (req, res) => {
+    const { gender, height, weight } = req.body;
+    const heightM = height / 100;
+    const bmi = weight / (heightM * heightM);
+    let category = "Normal weight";
+    let risk = "Low Risk";
+    if (bmi < 18.5) { category = "Underweight"; risk = "Moderate Risk"; }
+    else if (bmi >= 25 && bmi < 30) { category = "Overweight"; risk = "Moderate Risk"; }
+    else if (bmi >= 30) { category = "Obese"; risk = "High Risk"; }
+    
+    res.json({
+      bmi_value: Number(bmi.toFixed(1)),
+      category,
+      risk,
+      calorie_intake: Math.round(weight * 24 * 1.2), // Simple basal
+      model_used: false
+    });
+  });
+
+  app.post('/api/ml/predict-calories', (req, res) => {
+    const { gender, age, height, weight, duration, heart_rate } = req.body;
+    // Simple METs-based calculation fallback
+    const calories = Math.round(duration * (heart_rate / 100) * (weight / 10));
+    res.json({
+      calories_burned: calories,
+      fat_burn_grams: Math.round(calories / 9),
+      intensity: heart_rate > 150 ? "High" : "Moderate",
+      model_used: false
+    });
+  });
+
+  app.post('/api/ml/recommend-workout', (req, res) => {
+    const { fitness_goal, experience_level } = req.body;
+    res.json({
+      recommendation: `Node.js fallback: Rule-based recommendation for ${fitness_goal}.`,
+      workout_type: fitness_goal === 'muscle_gain' ? 'Hypertrophy' : 'Metabolic Conditioning',
+      intensity: experience_level === 'beginner' ? 'Low' : 'High',
+      exercises: [
+        { name: "Pushups", sets: "3", reps: "10-15", muscle: "Chest", instructions: "Keep core tight." },
+        { name: "Squats", sets: "3", reps: "15", muscle: "Legs", instructions: "Break parallel." }
+      ],
+      weekly_plan: [
+        { day: "Monday", focus: "Full Body", rest: false },
+        { day: "Tuesday", focus: "Recovery", rest: true }
+      ],
+      model_used: false
+    });
+  });
+
   // Vite middleware
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
@@ -254,6 +382,15 @@ async function startServer() {
     app.use(express.static(distPath));
     app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
   }
+
+  // Centralized Error Handler
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error(err.stack || err);
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: "Validation failed", details: err.errors });
+    }
+    res.status(500).json({ error: "Internal Server Error" });
+  });
 
   app.listen(PORT, "0.0.0.0", () => console.log(`Server running on port ${PORT}`));
 }

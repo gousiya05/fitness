@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -266,6 +267,38 @@ export default function Home() {
           </motion.div>
         </div>
       </header>
+
+      {/* NEW: Project Overview / Portfolio Introduction */}
+      <section className="relative py-20 border-t border-white/5 bg-white/[0.02] z-10">
+        <div className="container mx-auto px-6">
+          <div className="grid lg:grid-cols-2 gap-16 items-center">
+            <motion.div initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}>
+              <Badge className="bg-primary/10 text-primary border-primary/20 mb-6 tracking-widest uppercase text-[10px]">Project Overview</Badge>
+              <h2 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter mb-6">Bridging the gap between <span className="text-primary">Human Physiology</span> and <span className="text-primary">Machine Learning</span></h2>
+              <p className="text-white/40 leading-relaxed mb-6">
+                FlexAI was built to solve the fragmentation in the modern fitness industry. Instead of using separate apps for diet tracking, form correction, and workout logging, this platform acts as a unified "Neural Link".
+              </p>
+              <p className="text-white/40 leading-relaxed mb-8">
+                Designed as a full-stack portfolio piece, it leverages <strong>React 19</strong>, <strong>Node.js/Express</strong>, and <strong>MongoDB</strong>, augmented by <strong>Google Gemini 2.5</strong> and custom <strong>Linear Regression</strong> pipelines for predictive analytics.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex items-center gap-2 text-sm font-bold text-white/80"><CheckCircle2 className="text-primary" size={16}/> Full-Stack MERN</div>
+                <div className="flex items-center gap-2 text-sm font-bold text-white/80"><CheckCircle2 className="text-primary" size={16}/> AI Image Processing</div>
+                <div className="flex items-center gap-2 text-sm font-bold text-white/80"><CheckCircle2 className="text-primary" size={16}/> Real-time Analytics</div>
+                <div className="flex items-center gap-2 text-sm font-bold text-white/80"><CheckCircle2 className="text-primary" size={16}/> Secured JWT Auth</div>
+              </div>
+            </motion.div>
+            <motion.div initial={{ opacity: 0, x: 20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} className="relative h-[400px] rounded-3xl overflow-hidden border border-white/10 shadow-2xl group">
+              <div className="absolute inset-0 bg-gradient-to-tr from-primary/20 to-transparent z-10" />
+              {/* Demo Screenshot Placeholder */}
+              <img src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?q=80&w=2070&auto=format&fit=crop" alt="Dashboard Preview" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+              <div className="absolute bottom-6 left-6 z-20">
+                <Badge className="bg-black/60 backdrop-blur-md text-white border-white/10 uppercase tracking-widest text-[9px]">Live Dashboard Rendering</Badge>
+              </div>
+            </motion.div>
+          </div>
+        </div>
+      </section>
 
       {/* NEW: Interactive Biological Sandbox */}
       <section id="sandbox" className="relative py-28 border-y border-white/5 bg-black/60 backdrop-blur-md z-10">
@@ -619,28 +652,77 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Social Verification */}
-      <section className="relative py-32 border-t border-white/5">
+      {/* NEW: ML Models Section */}
+      <section className="relative py-32 bg-white/[0.01] border-y border-white/5 z-10">
         <div className="container mx-auto px-6">
-           <div className="flex flex-col md:flex-row items-center justify-between gap-12">
-              <div className="max-w-md">
-                 <div className="text-primary font-black uppercase italic tracking-widest text-[10px] mb-4">Neural Network Stats</div>
-                 <h2 className="text-5xl font-black italic uppercase tracking-tighter leading-none mb-6">Battle Tested <br/> Worldwide</h2>
-                 <p className="text-white/40 font-medium leading-relaxed">Join 200k+ elite athletes optimizing their biological hardware with FlexAI.</p>
+          <div className="text-center mb-20">
+            <Badge className="bg-primary/10 text-primary border-primary/20 mb-4 tracking-widest uppercase">Under The Hood</Badge>
+            <h2 className="text-4xl md:text-6xl font-black italic uppercase tracking-tighter">Machine Learning <span className="text-primary text-neon">Architecture</span></h2>
+            <p className="text-white/40 max-w-2xl mx-auto text-sm mt-4 leading-relaxed">FlexAI doesn't just display data; it predicts outcomes. Our dual-engine architecture combines Generative AI with classic statistical learning.</p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-10">
+            <Card className="glass-card p-10 border-white/5 relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-6 opacity-10"><BrainCircuit size={80} /></div>
+              <h3 className="text-2xl font-black italic uppercase tracking-tighter mb-4 text-white">Custom Linear Regression</h3>
+              <p className="text-white/40 text-sm mb-6 leading-relaxed">
+                A custom TypeScript-based ML pipeline (`ml/train.ts`) processes CSV telemetry datasets. It trains a Linear Regression model to predict individualized energy expenditure based on biometric independent variables (like weight).
+              </p>
+              <div className="bg-black/50 p-4 rounded-xl border border-white/5 font-mono text-xs text-emerald-400">
+                <div className="mb-2 text-white/30">// Sample Model Output</div>
+                <div>{"{"}</div>
+                <div className="pl-4">"type": "linear-regression",</div>
+                <div className="pl-4">"slope": 15.42,</div>
+                <div className="pl-4">"intercept": 540.1,</div>
+                <div className="pl-4">"trainR2": 0.89</div>
+                <div>{"}"}</div>
               </div>
-              <div className="grid grid-cols-2 gap-4 w-full md:w-auto">
-                 {[
-                   { label: 'Neural Links', val: '200k+' },
-                   { label: 'Reps Detected', val: '1.4B' },
-                   { label: 'Calories Burned', val: '800M' },
-                   { label: 'Global Rank', val: '#1' },
-                 ].map((stat, i) => (
-                   <div key={i} className="glass p-8 rounded-[2rem] border border-white/5 text-center min-w-[160px]">
-                      <div className="text-3xl font-black italic text-white tracking-widest">{stat.val}</div>
-                      <div className="text-[10px] font-black uppercase text-primary tracking-widest mt-2">{stat.label}</div>
+            </Card>
+
+            <Card className="glass-card p-10 border-white/5 relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-6 opacity-10"><Sparkles size={80} /></div>
+              <h3 className="text-2xl font-black italic uppercase tracking-tighter mb-4 text-white">Gemini 2.5 Flash Vision</h3>
+              <p className="text-white/40 text-sm mb-6 leading-relaxed">
+                Leveraging Google's Gemini 2.5 Flash API for zero-shot image classification. The Food Scanner uploads meal photos in real-time, extracting precise macronutrients and providing a proprietary "Health Grade".
+              </p>
+              <div className="bg-black/50 p-4 rounded-xl border border-white/5 font-mono text-xs text-amber-400">
+                <div className="mb-2 text-white/30">// Prompt Injection</div>
+                <div>const prompt = `Analyze this food image...`;</div>
+                <div>await ai.models.generateContent({'{'}</div>
+                <div className="pl-4">model: "gemini-2.5-flash",</div>
+                <div className="pl-4">contents: [prompt, imageBuffer]</div>
+                <div>{'}'});</div>
+              </div>
+            </Card>
+          </div>
+        </div>
+      </section>
+
+      {/* Testimonials / Sample Users */}
+      <section className="relative py-32 border-b border-white/5">
+        <div className="container mx-auto px-6">
+           <div className="text-center mb-16">
+             <Badge className="bg-primary/10 text-primary border-primary/20 mb-4 tracking-widest uppercase">System Validation</Badge>
+             <h2 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter">Subject <span className="text-primary">Telemetry</span></h2>
+           </div>
+
+           <div className="grid md:grid-cols-3 gap-6">
+             {[
+               { name: 'Sarah J.', goal: 'Fat Loss', quote: 'The ML predictive dashboard completely changed my approach. I can see my weight delta actively projecting downward.', img: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?q=80&w=2070&auto=format&fit=crop' },
+               { name: 'Marcus T.', goal: 'Hypertrophy', quote: 'The AI Pose scanner fixed my squat depth in 3 sessions. The neural training protocols are perfectly mapped to my volume efficiency.', img: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=1887&auto=format&fit=crop' },
+               { name: 'Elena R.', goal: 'Maintenance', quote: 'Scanning my food with Gemini 2.5 is seamless. The dark mode aesthetics make tracking my diet feel like a cyberpunk game.', img: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=1964&auto=format&fit=crop' }
+             ].map((user, i) => (
+               <Card key={i} className="glass-card border-white/5 p-8 relative overflow-hidden group hover:border-primary/30 transition-all">
+                 <div className="flex items-center gap-4 mb-6">
+                   <img src={user.img} alt={user.name} className="w-14 h-14 rounded-full object-cover border-2 border-white/10" />
+                   <div>
+                     <div className="font-black italic text-lg uppercase tracking-tight">{user.name}</div>
+                     <Badge className="bg-white/5 text-white/50 border-none text-[8px] uppercase tracking-widest px-2">{user.goal}</Badge>
                    </div>
-                 ))}
-              </div>
+                 </div>
+                 <p className="text-white/60 text-sm leading-relaxed font-medium">"{user.quote}"</p>
+               </Card>
+             ))}
            </div>
         </div>
       </section>
@@ -663,6 +745,37 @@ export default function Home() {
                 <ChevronRight className="ml-4 group-hover:translate-x-2 transition-transform" size={32} />
              </Button>
            </motion.div>
+        </div>
+      </section>
+
+      {/* NEW: Contact Section */}
+      <section className="relative py-32 z-10">
+        <div className="container mx-auto px-6 max-w-3xl">
+          <Card className="glass-card border-white/5 p-10 md:p-14 text-center">
+             <Badge className="bg-primary/10 text-primary border-primary/20 mb-6 tracking-widest uppercase">Developer Connection</Badge>
+             <h2 className="text-4xl font-black italic uppercase tracking-tighter mb-4">Inquiries & <span className="text-primary">Collaborations</span></h2>
+             <p className="text-white/40 mb-10 text-sm">Have questions about the architecture or interested in hiring the developer behind this project? Reach out below.</p>
+             
+             <form className="space-y-4 text-left" onSubmit={(e) => { e.preventDefault(); alert('Message sent! (Portfolio Demo)'); }}>
+               <div className="grid grid-cols-2 gap-4">
+                 <div className="space-y-2">
+                   <label className="text-[10px] font-black uppercase text-white/50 tracking-widest">Name</label>
+                   <Input placeholder="John Doe" className="bg-white/5 border-white/10 h-12" required />
+                 </div>
+                 <div className="space-y-2">
+                   <label className="text-[10px] font-black uppercase text-white/50 tracking-widest">Email</label>
+                   <Input type="email" placeholder="john@example.com" className="bg-white/5 border-white/10 h-12" required />
+                 </div>
+               </div>
+               <div className="space-y-2">
+                 <label className="text-[10px] font-black uppercase text-white/50 tracking-widest">Message</label>
+                 <textarea placeholder="Discussing the ML pipeline..." className="w-full bg-white/5 border-white/10 rounded-md p-3 min-h-[120px] text-sm focus:outline-none focus:border-primary/50" required />
+               </div>
+               <Button type="submit" className="w-full h-14 bg-primary text-black hover:bg-white font-black uppercase italic tracking-widest text-sm mt-4">
+                 Transmit Signal
+               </Button>
+             </form>
+          </Card>
         </div>
       </section>
 

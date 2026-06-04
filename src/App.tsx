@@ -17,15 +17,9 @@ import MlDashboard from './components/dashboard/MlDashboard';
 import { Toaster } from '@/components/ui/sonner';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  // Auto-initialize standard mock user / token if absent so no page breaks!
-  if (!localStorage.getItem('user')) {
-    localStorage.setItem('user', JSON.stringify({ email: 'subject@fitai.io', name: 'Subject Elite' }));
-  }
-  if (!localStorage.getItem('token')) {
-    localStorage.setItem('token', 'mock_jwt_token_for_seamless_local_experience');
-  }
-  if (!localStorage.getItem('onboarded')) {
-    localStorage.setItem('onboarded', 'true');
+  const token = localStorage.getItem('token');
+  if (!token) {
+    return <Navigate to="/auth" replace />;
   }
   
   return <Layout>{children}</Layout>;
