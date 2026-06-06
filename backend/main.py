@@ -184,8 +184,8 @@ class WorkoutResponse(BaseModel):
     recommendation: str
     workout_type:   str
     intensity:      str
-    exercises:      list
-    weekly_plan:    list
+    exercises:      list[WorkoutExercise]
+    weekly_plan:    list[WeeklyPlanDay]
     model_used:     bool
 
 
@@ -204,12 +204,15 @@ def _safe_predict(model, features: list) -> float:
 
 
 def _encode_gender(encoder, gender: str) -> int:
-    """Encode gender using the saved LabelEncoder, with numeric fallback."""
+    """Encode gender using the saved LabelEncoder, with numeric fallback.
+    Normalises to lowercase to handle encoders trained on 'male'/'female'.
+    """
     try:
         if encoder is not None:
-            return int(encoder.transform([gender])[0])
+            return int(encoder.transform([gender.strip().lower()])[0])
     except (ValueError, KeyError, AttributeError):
         pass
+    # Numeric fallback (male→0, female→1 by sklearn default alphabetical order)
     return 0 if gender.strip().lower() == "male" else 1
 
 
@@ -222,6 +225,36 @@ def _bmi_category(bmi: float) -> tuple[str, str]:
         return "Overweight", "Increased hypertension and cardiovascular risk."
     else:
         return "Obese", "High cardiovascular and metabolic warning. Seek medical advice."
+
+
+# BMI model class → (category, risk)
+# Verified by testing RandomForestClassifier output against known BMI values.
+_BMI_CLASS_MAP: dict = {
+    0: ("Extremely Underweight", "Critically low BMI. Seek immediate medical attention."),
+    1: ("Underweight",           "High vulnerability to immune issues and nutrient deficiency."),
+    2: ("Healthy",               "Low metabolic risk profile. Optimal BMI range."),
+    3: ("Healthy",               "Low metabolic risk profile. Optimal BMI range."),
+    4: ("Obese",                 "High cardiovascular and metabolic warning. Seek medical advice."),
+    5: ("Extremely Obese",       "Critical BMI range. Immediate lifestyle intervention needed."),
+}
+
+
+# Workout DataFrame goal/level keyword maps
+# Tag vocabulary confirmed from the 2,598-row dataset:
+# Bodybuilding, Muscle & Sculpting, Powerbuilding, Athletics,
+# Powerlifting, Bodyweight Fitness, Olympic Weightlifting
+_WORKOUT_GOAL_KEYWORDS: dict = {
+    "weight_loss":  ["Bodyweight Fitness", "Athletics"],
+    "muscle_gain":  ["Bodybuilding", "Muscle & Sculpting"],
+    "lean_bulk":    ["Bodybuilding", "Powerbuilding", "Muscle & Sculpting"],
+    "maintenance":  ["Bodyweight Fitness", "Athletics", "Muscle & Sculpting"],
+    "weight_gain":  ["Powerbuilding", "Powerlifting", "Athletics"],
+}
+_WORKOUT_LEVEL_KEYWORDS: dict = {
+    "beginner":     ["Beginner", "Novice"],
+    "intermediate": ["Intermediate"],
+    "advanced":     ["Advanced"],
+}
 
 
 # ---------------------------------------------------------------------------
@@ -309,28 +342,26 @@ async def predict_bmi(req: BMIRequest):
         used_model = False
 
         if model is not None:
-            g_enc = _encode_gender(encoder, req.gender)
-            # Try feature combos in order of likelihood
-            for features in [
-                [g_enc, req.height, req.weight],
-                [req.height, req.weight],
-                [g_enc, req.weight, req.height],
-            ]:
-                try:
-                    pred = round(_safe_predict(model, features), 1)
-                    # Sanity-check: ML result should be in plausible BMI range
-                    if 10.0 <= pred <= 60.0:
-                        bmi_value  = pred
-                        used_model = True
-                        break
-                    else:
-                        log.warning(f"  ML BMI={pred} out of plausible range — trying next feature set")
-                except Exception as exc:
-                    log.warning(f"  Feature set {features} failed: {exc}")
-            if not used_model:
-                log.info("  Falling back to canonical BMI formula")
+            try:
+                g_enc = _encode_gender(encoder, req.gender)
+                # bmi_model is a RandomForestClassifier returning a category class (0–5),
+                # NOT a raw BMI float. Features: [gender_enc, height_cm, weight_kg]
+                arr  = np.array([[g_enc, req.height, req.weight]], dtype=float)
+                pred_class = int(model.predict(arr)[0])
+                if pred_class in _BMI_CLASS_MAP:
+                    used_model = True
+                    log.info(f"  ML classifier → class={pred_class}")
+                else:
+                    log.warning(f"  ML classifier returned unknown class={pred_class}")
+            except Exception as exc:
+                log.warning(f"  BMI classifier failed: {exc}")
 
-        category, risk = _bmi_category(bmi_value)
+        # Always use formula for the numeric BMI value; use model for category when available
+        if used_model:
+            category, risk = _BMI_CLASS_MAP[pred_class]
+        else:
+            category, risk = _bmi_category(bmi_value)
+            log.info("  Falling back to canonical BMI category")
         bmr = 10 * req.weight + 6.25 * req.height - 5 * 25 + (5 if req.gender.lower() == "male" else -161)
         calorie_intake = int(bmr * 1.55)
 
@@ -369,22 +400,26 @@ async def predict_calories(req: CalorieRequest):
 
         if model is not None:
             g_enc = _encode_gender(encoder, req.gender)
-            for features in [
+            # calorie_model was trained on exactly 7 features:
+            # Gender(enc), Age, Height, Weight, Duration, Heart_Rate, Body_Temp
+            feature_sets = [
                 [g_enc, req.age, req.height, req.weight, req.duration, req.heart_rate, req.body_temp],
                 [g_enc, req.age, req.weight, req.duration, req.heart_rate, req.body_temp],
                 [g_enc, req.age, req.weight, req.duration, req.heart_rate],
                 [req.age, req.weight, req.duration, req.heart_rate],
-            ]:
+            ]
+            for features in feature_sets:
                 try:
                     pred = round(_safe_predict(model, features), 1)
                     if 1.0 <= pred <= 5000.0:
                         calories   = pred
                         used_model = True
+                        log.info(f"  XGBoost pred={calories} kcal (features={len(features)})")
                         break
                     else:
-                        log.warning(f"  ML calories={pred} out of plausible range")
+                        log.warning(f"  XGBoost features({len(features)}): out-of-range pred={pred:.1f}")
                 except Exception as exc:
-                    log.warning(f"  Feature set {features} failed: {exc}")
+                    log.warning(f"  XGBoost features({len(features)}): {exc}")
 
         if calories is None:
             # Fallback: MET-like approximation
@@ -552,25 +587,49 @@ async def recommend_workout(req: WorkoutRequest):
         used_model = False
         ml_note    = ""
 
-        model = models.get("workout")
-        if model is not None:
+        # workout model is a pandas DataFrame of 2,598 real workout programs.
+        # Filter by goal keywords and experience level to find the best match.
+        df = models.get("workout")
+        if df is not None:
             try:
-                g_enc   = 0 if req.gender.lower() == "male" else 1
-                exp_map = {"beginner": 0, "intermediate": 1, "advanced": 2}
-                goal_map = {"weight_loss": 0, "muscle_gain": 1, "lean_bulk": 2,
-                            "maintenance": 3, "weight_gain": 4}
-                exp_enc  = exp_map.get(req.experience_level, 1)
-                goal_enc = goal_map.get(req.fitness_goal, 3)
+                import ast
+                goal_keywords  = _WORKOUT_GOAL_KEYWORDS.get(req.fitness_goal, [])
+                level_keywords = _WORKOUT_LEVEL_KEYWORDS.get(req.experience_level, ["Intermediate"])
 
-                pred = _safe_predict(
-                    model,
-                    [req.age, g_enc, req.weight, req.height, bmi, exp_enc, goal_enc]
-                )
+                def _matches_goal(cell: str) -> bool:
+                    try:
+                        vals = ast.literal_eval(cell) if isinstance(cell, str) else []
+                        return any(kw in v for kw in goal_keywords for v in vals)
+                    except Exception:
+                        return False
+
+                def _matches_level(cell: str) -> bool:
+                    try:
+                        vals = ast.literal_eval(cell) if isinstance(cell, str) else []
+                        return any(kw in v for kw in level_keywords for v in vals)
+                    except Exception:
+                        return False
+
+                mask_goal  = df["goal"].apply(_matches_goal)
+                mask_level = df["level"].apply(_matches_level)
+
+                # Priority: goal + level match → goal-only match → any match
+                filtered = df[mask_goal & mask_level]
+                if filtered.empty:
+                    filtered = df[mask_goal]
+                if filtered.empty:
+                    filtered = df
+
+                # Pick the program with the most exercises (most comprehensive)
+                best = filtered.sort_values("total_exercises", ascending=False).iloc[0]
+                title = str(best["title"]).strip()
+                desc  = str(best["description"]).strip()[:200]
+                prog_len = best.get("program_length", "N/A")
+                ml_note = f"{title} ({prog_len} weeks) — {desc}..."
                 used_model = True
-                ml_note    = f"ML Fitness Score: {round(pred, 2)}"
-                log.info(f"  ML prediction: {ml_note}")
+                log.info(f"  DataFrame lookup → '{title}' (from {len(filtered)} matches)")
             except Exception as exc:
-                log.warning(f"  Workout model prediction failed: {exc}")
+                log.warning(f"  Workout DataFrame lookup failed: {exc}")
 
         recommendation = (
             ml_note if ml_note

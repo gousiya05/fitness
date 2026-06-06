@@ -10,15 +10,6 @@ import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'rec
 import { predictCalories } from '@/services/mlApiService';
 import { toast } from 'sonner';
 
-const weeklyData = [
-  { day: 'Mon', calories: 2100 },
-  { day: 'Tue', calories: 1850 },
-  { day: 'Wed', calories: 2300 },
-  { day: 'Thu', calories: 2000 },
-  { day: 'Fri', calories: 1900 },
-  { day: 'Sat', calories: 2500 },
-  { day: 'Sun', calories: 2200 },
-];
 
 export default function CalorieTracker() {
   const [metrics, setMetrics] = useState({
@@ -53,6 +44,13 @@ export default function CalorieTracker() {
     modelUsed: boolean,
   } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [calorieHistory, setCalorieHistory] = useState<Array<{ day: string; calories: number }>>([]); 
+
+  // Load calorie history from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem('calorieHistory');
+    if (stored) setCalorieHistory(JSON.parse(stored));
+  }, []);
 
   const calculateBurn = async () => {
     const duration = parseFloat(metrics.duration);
@@ -84,6 +82,14 @@ export default function CalorieTracker() {
         intensity: result.intensity,
         modelUsed: result.model_used,
       });
+      // Persist to localStorage history (keep last 7)
+      const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const dayLabel = days[new Date().getDay()];
+      const newEntry = { day: dayLabel, calories: result.calories_burned, ts: Date.now() };
+      const existing: any[] = JSON.parse(localStorage.getItem('calorieHistory') || '[]');
+      const updated = [...existing, newEntry].slice(-7);
+      localStorage.setItem('calorieHistory', JSON.stringify(updated));
+      setCalorieHistory(updated);
       toast.success(result.model_used ? 'ML Model prediction complete.' : 'Calorie estimate (fallback formula).');
     } catch (error) {
       // Fallback to local calculation
@@ -277,7 +283,7 @@ export default function CalorieTracker() {
             </div>
             <div className="h-[200px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={weeklyData}>
+            <AreaChart data={calorieHistory.length > 0 ? calorieHistory : [{day:'—', calories:0}]}>
                   <defs>
                     <linearGradient id="colorCal" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#ea580c" stopOpacity={0.3}/>

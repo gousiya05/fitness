@@ -314,64 +314,13 @@ async function startServer() {
     }
   });
 
-  // Polyfills for missing Python ML endpoints
-  app.get('/api/ml/health', (req, res) => {
-    res.json({
-      status: 'healthy',
-      models_loaded: { 'Node.js Fallback': true },
-      total_loaded: 1,
-      endpoints: ['/predict-bmi', '/predict-calories', '/recommend-workout']
-    });
-  });
-
-  app.post('/api/ml/predict-bmi', (req, res) => {
-    const { gender, height, weight } = req.body;
-    const heightM = height / 100;
-    const bmi = weight / (heightM * heightM);
-    let category = "Normal weight";
-    let risk = "Low Risk";
-    if (bmi < 18.5) { category = "Underweight"; risk = "Moderate Risk"; }
-    else if (bmi >= 25 && bmi < 30) { category = "Overweight"; risk = "Moderate Risk"; }
-    else if (bmi >= 30) { category = "Obese"; risk = "High Risk"; }
-    
-    res.json({
-      bmi_value: Number(bmi.toFixed(1)),
-      category,
-      risk,
-      calorie_intake: Math.round(weight * 24 * 1.2), // Simple basal
-      model_used: false
-    });
-  });
-
-  app.post('/api/ml/predict-calories', (req, res) => {
-    const { gender, age, height, weight, duration, heart_rate } = req.body;
-    // Simple METs-based calculation fallback
-    const calories = Math.round(duration * (heart_rate / 100) * (weight / 10));
-    res.json({
-      calories_burned: calories,
-      fat_burn_grams: Math.round(calories / 9),
-      intensity: heart_rate > 150 ? "High" : "Moderate",
-      model_used: false
-    });
-  });
-
-  app.post('/api/ml/recommend-workout', (req, res) => {
-    const { fitness_goal, experience_level } = req.body;
-    res.json({
-      recommendation: `Node.js fallback: Rule-based recommendation for ${fitness_goal}.`,
-      workout_type: fitness_goal === 'muscle_gain' ? 'Hypertrophy' : 'Metabolic Conditioning',
-      intensity: experience_level === 'beginner' ? 'Low' : 'High',
-      exercises: [
-        { name: "Pushups", sets: "3", reps: "10-15", muscle: "Chest", instructions: "Keep core tight." },
-        { name: "Squats", sets: "3", reps: "15", muscle: "Legs", instructions: "Break parallel." }
-      ],
-      weekly_plan: [
-        { day: "Monday", focus: "Full Body", rest: false },
-        { day: "Tuesday", focus: "Recovery", rest: true }
-      ],
-      model_used: false
-    });
-  });
+  // =============================================
+  // ML Endpoints — served by FastAPI (port 8000)
+  // =============================================
+  // All ML predictions (/predict-bmi, /predict-calories, /recommend-workout)
+  // are handled by the FastAPI Python backend running on http://localhost:8000.
+  // The frontend reads VITE_ML_API_URL from .env and calls FastAPI directly.
+  // No Node.js fallback needed — FastAPI uses real trained .pkl models.
 
   // Vite middleware
   if (process.env.NODE_ENV !== "production") {
@@ -387,7 +336,7 @@ async function startServer() {
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error(err.stack || err);
     if (err instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: err.errors });
+      return res.status(400).json({ error: "Validation failed", details: err.issues ?? err.message });
     }
     res.status(500).json({ error: "Internal Server Error" });
   });

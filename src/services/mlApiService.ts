@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 /**
  * ML API Service — connects React frontend to FastAPI Python backend.
  * All .pkl model predictions are handled server-side by Python/joblib.

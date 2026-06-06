@@ -10,15 +10,6 @@ import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'rec
 import { predictBMI } from '@/services/mlApiService';
 import { toast } from 'sonner';
 
-const dummyHistory = [
-  { day: 'Mon', bmi: 24.5 },
-  { day: 'Tue', bmi: 24.4 },
-  { day: 'Wed', bmi: 24.2 },
-  { day: 'Thu', bmi: 24.1 },
-  { day: 'Fri', bmi: 23.9 },
-  { day: 'Sat', bmi: 23.8 },
-  { day: 'Sun', bmi: 23.6 },
-];
 
 export default function BMICalculator() {
   const [weight, setWeight] = useState<string>('75');
@@ -31,6 +22,15 @@ export default function BMICalculator() {
   const [calorieIntake, setCalorieIntake] = useState<number>(0);
   const [loading, setLoading] = useState(false);
   const [modelUsed, setModelUsed] = useState(false);
+  const [bmiHistory, setBmiHistory] = useState<Array<{ day: string; bmi: number }>>([]); 
+
+  // Load BMI history from localStorage on mount
+  React.useEffect(() => {
+    const stored = localStorage.getItem('bmiHistory');
+    if (stored) {
+      setBmiHistory(JSON.parse(stored));
+    }
+  }, []);
 
   const calculateBMI = async () => {
     const w = parseFloat(weight);
@@ -48,6 +48,14 @@ export default function BMICalculator() {
       setRisk(result.risk);
       setCalorieIntake(result.calorie_intake);
       setModelUsed(result.model_used);
+      // Persist to localStorage history (keep last 7)
+      const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const dayLabel = days[new Date().getDay()];
+      const newEntry = { day: dayLabel, bmi: result.bmi_value, ts: Date.now() };
+      const existing: any[] = JSON.parse(localStorage.getItem('bmiHistory') || '[]');
+      const updated = [...existing, newEntry].slice(-7);
+      localStorage.setItem('bmiHistory', JSON.stringify(updated));
+      setBmiHistory(updated);
       toast.success(result.model_used ? 'ML Model prediction complete.' : 'BMI calculated (fallback formula).');
     } catch (error) {
       // Fallback to local calculation if API is unreachable
@@ -277,11 +285,13 @@ export default function BMICalculator() {
       <Card className="glass-card p-8">
         <div className="flex items-center justify-between mb-8">
            <h3 className="text-xl font-black italic uppercase tracking-tighter">BMI Delta History</h3>
-           <Badge variant="outline" className="border-white/5 glass">Syncing Local</Badge>
+           <Badge variant="outline" className="border-white/5 glass">
+             {bmiHistory.length > 0 ? `${bmiHistory.length} Records` : 'No Data Yet'}
+           </Badge>
         </div>
         <div className="h-[250px] w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={dummyHistory}>
+            <LineChart data={bmiHistory.length > 0 ? bmiHistory : [{day:'—',bmi:0}]}>
               <XAxis dataKey="day" stroke="#ffffff20" fontSize={10} tickLine={false} axisLine={false} />
               <YAxis domain={[20, 30]} hide />
               <Tooltip 
