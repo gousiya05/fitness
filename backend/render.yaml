@@ -1,0 +1,18 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# FitAI — Render Deployment Config (backend)
+# Renders uses this file to auto-configure the web service.
+# https://render.com/docs/render-yaml-spec
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  - type: web
+    name: fitai-ml-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+    healthCheckPath: /health
+    autoDeploy: true

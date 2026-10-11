@@ -1,0 +1,10 @@
+{
+  "name": "FlexAI: Modern AI Fitness Trainer",
+  "description": "Premium fitness application featuring AI-powered workout recommendations, posture correction with MediaPipe, progress tracking, and personalized diet plans.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
