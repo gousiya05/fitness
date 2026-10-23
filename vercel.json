@@ -1,5 +1,7 @@
 {
   "version": 2,
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "rewrites": [
     {
       "source": "/api/(.*)",
@@ -10,5 +12,23 @@
       "destination": "/index.html"
     }
   ],
-  "framework": "vite"
+  "framework": "vite",
+  "env": {
+    "ML_BACKEND_URL": {
+      "description": "URL of the FastAPI ML backend (e.g. https://your-fastapi.onrender.com). Required for ML predictions in production.",
+      "required": false
+    },
+    "GEMINI_API_KEY": {
+      "description": "Google Gemini API key. Required for food scanning and AI workout plans.",
+      "required": false
+    },
+    "JWT_SECRET": {
+      "description": "Secret key for signing JWT tokens. Use a long random string in production.",
+      "required": false
+    },
+    "MONGODB_URI": {
+      "description": "MongoDB connection string. Leave unset to use in-memory/localStorage fallback.",
+      "required": false
+    }
+  }
 }

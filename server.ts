@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import http from "http";
 import { exec } from "child_process";
 import { createServer as createViteServer } from "vite";
 import bcrypt from "bcryptjs";
@@ -22,8 +23,12 @@ dotenv.config();
 
 const JWT_SECRET = process.env.JWT_SECRET || "flexai-secret-key-2026";
 const USE_MONGODB = !!process.env.MONGODB_URI;
+const ML_BACKEND_URL = process.env.ML_BACKEND_URL || "http://localhost:8000";
+
 if (USE_MONGODB) {
-  mongoose.connect(process.env.MONGODB_URI as string).then(() => console.log("Connected to MongoDB")).catch(err => console.error(err));
+  mongoose.connect(process.env.MONGODB_URI as string)
+    .then(() => console.log("Connected to MongoDB"))
+    .catch(err => console.error("MongoDB error:", err));
 }
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -56,26 +61,79 @@ const registerSchema = z.object({
   lastName: z.string().optional()
 });
 
+// ──────────────────────────────────────────────────────────
+// FastAPI proxy helper — uses Node http module (always works)
+// Returns clean JSON 503 if FastAPI is unreachable
+// ──────────────────────────────────────────────────────────
+function proxyToFastAPI(
+  req: express.Request,
+  res: express.Response,
+  targetPath: string,
+  method: 'GET' | 'POST' | 'DELETE' = 'POST'
+): void {
+  const parsed = new URL(`${ML_BACKEND_URL}${targetPath}`);
+  const bodyStr = (method !== 'GET' && req.body && Object.keys(req.body).length > 0)
+    ? JSON.stringify(req.body)
+    : '';
+
+  const options: http.RequestOptions = {
+    hostname: parsed.hostname,
+    port: parseInt(parsed.port || '8000', 10),
+    path: parsed.pathname + (parsed.search || ''),
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(bodyStr),
+    },
+  };
+
+  const upstream = http.request(options, (upRes) => {
+    let data = '';
+    upRes.on('data', (chunk) => { data += chunk; });
+    upRes.on('end', () => {
+      try {
+        const json = JSON.parse(data);
+        res.status(upRes.statusCode || 200).json(json);
+      } catch {
+        res.status(upRes.statusCode || 500).json({ error: data || 'Upstream non-JSON response' });
+      }
+    });
+  });
+
+  upstream.on('error', (err: any) => {
+    // Connection refused / ECONNREFUSED — FastAPI not running
+    res.status(503).json({
+      error: 'ML backend unavailable',
+      detail: `Cannot connect to FastAPI at ${ML_BACKEND_URL}. Start it: cd backend && python -m uvicorn main:app --port 8000`,
+      ml_url: ML_BACKEND_URL,
+    });
+  });
+
+  if (bodyStr) upstream.write(bodyStr);
+  upstream.end();
+}
+
 async function startServer() {
   const app = express();
   const PORT = parseInt(process.env.PORT || "3000", 10);
-  
-  app.use(helmet({ contentSecurityPolicy: false })); // Disabled CSP for local Vite dev
+
+  app.use(helmet({ contentSecurityPolicy: false }));
   app.use(cors());
   app.use(morgan('dev'));
-  app.use(express.json());
+  app.use(express.json({ limit: '20mb' }));
 
   const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 100,
-    message: { error: "Too many requests from this IP, please try again after 15 minutes" }
+    max: 200,
+    message: { error: "Too many requests, please try again after 15 minutes" }
   });
 
   app.use("/api/auth", apiLimiter);
-  app.use("/api/ml", apiLimiter);
   app.use("/api/gemini", apiLimiter);
 
-  // Auth & Profile Routes
+  // ────────────────────────────────────────────────────────
+  // Auth Routes
+  // ────────────────────────────────────────────────────────
   app.post("/api/auth/register", async (req, res, next) => {
     try {
       const validated = registerSchema.parse(req.body);
@@ -91,9 +149,7 @@ async function startServer() {
         const token = jwt.sign({ userId: email }, JWT_SECRET);
         res.json({ token, user: { email, firstName, lastName, onboarded: false } });
       }
-    } catch (error: any) { 
-      next(error);
-    }
+    } catch (error: any) { next(error); }
   });
 
   app.post("/api/auth/login", async (req, res) => {
@@ -130,7 +186,9 @@ async function startServer() {
     } catch (error: any) { res.status(500).json({ error: error.message }); }
   });
 
-  // Progress Routes
+  // ────────────────────────────────────────────────────────
+  // Progress & Workout History
+  // ────────────────────────────────────────────────────────
   app.get("/api/progress", authenticate, async (req: any, res) => {
     try {
       if (USE_MONGODB) {
@@ -149,7 +207,6 @@ async function startServer() {
     } catch (error: any) { res.status(500).json({ error: error.message }); }
   });
 
-  // Workout History Routes
   app.get("/api/workout-history", authenticate, async (req: any, res) => {
     try {
       if (USE_MONGODB) {
@@ -168,42 +225,64 @@ async function startServer() {
     } catch (error: any) { res.status(500).json({ error: error.message }); }
   });
 
-  // Food Scanner Route
+  // ────────────────────────────────────────────────────────
+  // Food Scanner — requires Gemini
+  // ────────────────────────────────────────────────────────
   app.post("/api/food/scan", authenticate, upload.single('image'), async (req: any, res) => {
     try {
       if (!req.file) return res.status(400).json({ error: "No image provided" });
+
+      // Check Gemini availability first — return clear error, not crash
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
+        return res.status(503).json({
+          error: "Gemini API key not configured",
+          detail: "Food scanning requires GEMINI_API_KEY. Add it to your .env file to enable this feature.",
+          gemini_required: true
+        });
+      }
+
       const ai = getAiClient();
-      const prompt = `Analyze this food image and provide detailed nutritional information. Return strict JSON: { "foodItems": [{"name":"string","calories":number,"protein":"string","carbs":"string","fat":"string","fiber":"string","sugar":"string","portion":"string"}], "totalCalories": number, "recommendation": "string", "isHealthy": boolean }`;
+      const prompt = `Analyze this food image. Return ONLY strict JSON (no markdown):
+{
+  "foodItems": [{"name":"string","calories":number,"protein":"Xg","carbs":"Xg","fat":"Xg","fiber":"Xg","sugar":"Xg","portion":"serving description"}],
+  "totalCalories": number,
+  "recommendation": "brief health tip string",
+  "isHealthy": boolean,
+  "confidence": "estimated|database|image-analysis",
+  "disclaimer": "Nutritional values are estimates based on visual analysis"
+}`;
       const result = await ai.models.generateContent({
         model: "gemini-2.5-flash",
         contents: [prompt, { inlineData: { data: req.file.buffer.toString("base64"), mimeType: req.file.mimetype } }]
       });
-      const text = result.text;
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error("Invalid AI response");
+      const text = result.text || '';
+      const cleaned = text.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error("AI returned invalid JSON structure");
       const data = JSON.parse(jsonMatch[0]);
-      if (USE_MONGODB) {
-        try {
-          // If we had a scans schema we could use it here. For now, we can omit or push to an array on user if added.
-        } catch (e) {}
-      }
       res.json(data);
     } catch (error: any) {
       console.error("Scanner Error:", error);
       res.status(500).json({ error: error.message || "Analysis failed" });
     }
   });
-  
-  // Health check
+
+  // ────────────────────────────────────────────────────────
+  // App health check
+  // ────────────────────────────────────────────────────────
   app.get("/api/health", (req, res) => {
-    res.json({ 
-      status: "ok", 
+    res.json({
+      status: "ok",
       apiKeyConfigured: !!process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_KEY",
-      dbConfigured: USE_MONGODB
+      dbConfigured: USE_MONGODB,
+      mlBackend: ML_BACKEND_URL
     });
   });
 
-  // Gemini Proxy
+  // ────────────────────────────────────────────────────────
+  // Gemini Proxy — server-side only, key never exposed
+  // ────────────────────────────────────────────────────────
   app.post("/api/gemini/generate", async (req, res) => {
     try {
       const { prompt, systemInstruction } = req.body;
@@ -217,20 +296,86 @@ async function startServer() {
         }
       });
       res.json({ text: result.text });
-    } catch (error: any) { 
+    } catch (error: any) {
       console.error("Gemini Error:", error);
-      res.status(500).json({ error: error.message }); 
+      res.status(500).json({ error: error.message });
     }
   });
 
-  // =============================================
-  // ML Pipeline Routes (no API keys required)
-  // =============================================
+  // ════════════════════════════════════════════════════════
+  // ML PROXY — forwards /api/ml/* to FastAPI on port 8000
+  // This fixes the "Unexpected token 'A'" JSON parse error
+  // caused by Vite returning HTML for unmatched /api/ml/* routes.
+  // ════════════════════════════════════════════════════════
+
+  // Health check for ML backend
+  app.get("/api/ml/health", async (req, res) => {
+    proxyToFastAPI(req, res, "/health", "GET");
+  });
+
+  // Predict BMI
+  app.post("/api/ml/predict-bmi", async (req, res) => {
+    proxyToFastAPI(req, res, "/predict-bmi", "POST");
+  });
+
+  // Predict calories burned
+  app.post("/api/ml/predict-calories", async (req, res) => {
+    proxyToFastAPI(req, res, "/predict-calories", "POST");
+  });
+
+  // Recommend workout
+  app.post("/api/ml/recommend-workout", async (req, res) => {
+    proxyToFastAPI(req, res, "/recommend-workout", "POST");
+  });
+
+  // Algorithm Lab — list datasets
+  app.get("/api/ml/lab/datasets", async (req, res) => {
+    proxyToFastAPI(req, res, "/lab/datasets", "GET");
+  });
+
+  // Algorithm Lab — list algorithms
+  app.get("/api/ml/lab/algorithms", async (req, res) => {
+    proxyToFastAPI(req, res, "/lab/algorithms", "GET");
+  });
+
+  // Algorithm Lab — train model
+  app.post("/api/ml/lab/train", async (req, res) => {
+    proxyToFastAPI(req, res, "/lab/train", "POST");
+  });
+
+  // Algorithm Lab — list trained models
+  app.get("/api/ml/lab/models", async (req, res) => {
+    proxyToFastAPI(req, res, "/lab/models", "GET");
+  });
+
+  // Algorithm Lab — predict with trained model
+  app.post("/api/ml/lab/predict", async (req, res) => {
+    proxyToFastAPI(req, res, "/lab/predict", "POST");
+  });
+
+  // Algorithm Lab — compare models
+  app.get("/api/ml/lab/compare", async (req, res) => {
+    proxyToFastAPI(req, res, "/lab/compare", "GET");
+  });
+
+  // Algorithm Lab — delete model
+  app.delete("/api/ml/lab/model/:id", async (req, res) => {
+    proxyToFastAPI(req, res, `/lab/model/${req.params.id}`, "DELETE");
+  });
+
+  // Algorithm Lab — dataset info
+  app.get("/api/ml/lab/dataset/:name", async (req, res) => {
+    proxyToFastAPI(req, res, `/lab/dataset/${req.params.name}`, "GET");
+  });
+
+  // ════════════════════════════════════════════════════════
+  // Legacy Express ML routes (dataset upload/train/predict)
+  // kept for backward compatibility
+  // ════════════════════════════════════════════════════════
   const mlBase = path.join(process.cwd(), 'ml');
   const datasetsDir = path.join(mlBase, 'datasets');
   if (!fs.existsSync(datasetsDir)) fs.mkdirSync(datasetsDir, { recursive: true });
 
-  // Upload dataset (CSV/JSON)
   app.post('/api/ml/dataset', upload.single('file'), (req: any, res) => {
     try {
       if (!req.file) return res.status(400).json({ error: 'No file provided' });
@@ -239,22 +384,20 @@ async function startServer() {
       fs.writeFileSync(dest, req.file.buffer);
       res.json({ ok: true, filename });
     } catch (err: any) {
-      console.error(err);
       res.status(500).json({ error: 'Failed to upload dataset' });
     }
   });
 
-  // List uploaded datasets
-  app.get('/api/ml/datasets', (req, res) => {
+  app.get('/api/ml/datasets', async (req, res) => {
+    // Return built-in datasets from FastAPI + uploaded datasets
     try {
-      const files = fs.readdirSync(datasetsDir).filter((f: string) => !f.endsWith('.json') || f.includes('_'));
-      res.json({ datasets: files });
+      const files = fs.readdirSync(datasetsDir).filter((f: string) => f.includes('_'));
+      res.json({ datasets: files, note: 'Use /api/ml/lab/datasets for scikit-learn built-in datasets' });
     } catch (err: any) {
       res.status(500).json({ error: 'Failed to list datasets' });
     }
   });
 
-  // Delete a dataset
   app.delete('/api/ml/dataset/:name', (req, res) => {
     const filePath = path.join(datasetsDir, req.params.name);
     if (fs.existsSync(filePath)) {
@@ -265,7 +408,6 @@ async function startServer() {
     }
   });
 
-  // Trigger training
   app.post('/api/ml/train', (req, res) => {
     const datasetName = req.body?.dataset;
     const cmd = datasetName
@@ -273,56 +415,32 @@ async function startServer() {
       : `npx tsx ml/train.ts`;
     exec(cmd, { cwd: process.cwd() }, (error, stdout, stderr) => {
       if (error) {
-        console.error('Training error:', stderr);
         return res.status(500).json({ error: 'Training failed', details: stderr });
       }
       res.json({ ok: true, output: stdout });
     });
   });
 
-  // Predict using trained model (simple fallback if no model exists)
   app.post('/api/ml/predict', (req, res) => {
     try {
-      const { input } = req.body; // e.g. { input: [70] } for weight -> calorie prediction
+      const { input } = req.body;
       const weight = Array.isArray(input) ? input[0] : input;
       const modelPath = path.join(mlBase, 'model.json');
-
       if (!fs.existsSync(modelPath)) {
-        // No trained model yet — return a simple formula-based estimate
         const estimatedCalories = Math.round(weight * 15 + 500);
-        return res.json({
-          prediction: estimatedCalories,
-          source: 'formula-estimate',
-          note: 'No trained model found. Upload a dataset and train first for ML predictions.'
-        });
+        return res.json({ prediction: estimatedCalories, source: 'formula-estimate' });
       }
-
-      // Load the trained linear regression model
       const model = JSON.parse(fs.readFileSync(modelPath, 'utf-8'));
       const predicted = model.slope * weight + model.intercept;
-      return res.json({
-        prediction: Math.round(predicted),
-        source: 'trained-model',
-        modelType: model.type,
-        trainR2: model.trainR2,
-        testR2: model.testR2,
-        trainedAt: model.trainedAt,
-        dataset: model.dataset,
-      });
+      return res.json({ prediction: Math.round(predicted), source: 'trained-model' });
     } catch (err: any) {
       res.status(500).json({ error: 'Prediction failed' });
     }
   });
 
-  // =============================================
-  // ML Endpoints — served by FastAPI (port 8000)
-  // =============================================
-  // All ML predictions (/predict-bmi, /predict-calories, /recommend-workout)
-  // are handled by the FastAPI Python backend running on http://localhost:8000.
-  // The frontend reads VITE_ML_API_URL from .env and calls FastAPI directly.
-  // No Node.js fallback needed — FastAPI uses real trained .pkl models.
-
-  // Vite middleware
+  // ────────────────────────────────────────────────────────
+  // Vite dev middleware / Static production build
+  // ────────────────────────────────────────────────────────
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
@@ -341,7 +459,10 @@ async function startServer() {
     res.status(500).json({ error: "Internal Server Error" });
   });
 
-  app.listen(PORT, "0.0.0.0", () => console.log(`Server running on port ${PORT}`));
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`ML backend proxied from ${ML_BACKEND_URL}`);
+  });
 }
 
 startServer();

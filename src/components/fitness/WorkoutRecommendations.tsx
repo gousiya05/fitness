@@ -73,7 +73,7 @@ export default function WorkoutRecommendations() {
   // ML Model-based recommendation
   const getMlWorkoutPlan = async () => {
     if (!profile) {
-      toast.error("User context missing.");
+      toast.error("Complete your profile first", { description: "Go to Profile to set your age, weight, height and fitness goal." });
       return;
     }
     setMlLoading(true);
@@ -89,11 +89,20 @@ export default function WorkoutRecommendations() {
       setMlPlan(result);
       setActiveTab('ml');
       toast.success(result.model_used
-        ? 'ML Model workout generated.'
-        : 'Workout plan generated (rule-based).');
-    } catch (error) {
-      console.error(error);
-      toast.error("ML backend unavailable. Try Gemini AI instead.");
+        ? '✅ ML Model workout generated.'
+        : '✅ Workout plan generated (rule-based fallback).');
+    } catch (error: any) {
+      console.error('[ML Workout]', error);
+      // Never tell the user to switch to Gemini — explain the real problem
+      const isOffline = error?.status === 503 || error?.status === 0 || error?.isOffline;
+      if (isOffline) {
+        toast.error('ML Backend Offline', {
+          description: 'Start FastAPI: cd backend && python -m uvicorn main:app --port 8000',
+          duration: 8000,
+        });
+      } else {
+        toast.error('ML prediction failed', { description: error?.message || 'Unexpected error from ML service' });
+      }
     } finally {
       setMlLoading(false);
     }

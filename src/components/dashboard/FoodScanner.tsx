@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Camera, Upload, Loader2, Apple, Zap, AlertCircle, CheckCircle2, X, History, TrendingUp, Scan, CameraOff } from 'lucide-react';
+import { Camera, Upload, Loader2, Apple, Zap, AlertCircle, CheckCircle2, X, History, TrendingUp, Scan, CameraOff, KeyRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { toast } from 'sonner';
@@ -20,6 +20,8 @@ interface FoodScanResult {
   totalCalories: number;
   recommendation: string;
   isHealthy: boolean;
+  disclaimer?: string;
+  confidence?: string;
 }
 
 export default function FoodScanner() {
@@ -28,6 +30,8 @@ export default function FoodScanner() {
   const [result, setResult] = useState<FoodScanResult | null>(null);
   const [isLive, setIsLive] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
+  // null = unknown, true = Gemini unavailable, false = available
+  const [geminiRequired, setGeminiRequired] = useState<boolean | null>(null);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -110,7 +114,7 @@ export default function FoodScanner() {
         body: formData
       });
 
-      let responseData;
+      let responseData: any;
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.includes("application/json")) {
         responseData = await response.json();
@@ -119,10 +123,17 @@ export default function FoodScanner() {
         throw new Error(text || "Server returned an invalid response");
       }
 
+      // Check if Gemini is not configured (503 with gemini_required flag)
+      if (response.status === 503 && responseData.gemini_required) {
+        setGeminiRequired(true);
+        return;
+      }
+
       if (!response.ok) {
         throw new Error(responseData.error || 'Analysis failed');
       }
       
+      setGeminiRequired(false);
       setResult(responseData);
       toast.success("Neural Analysis Complete");
     } catch (error: any) {
@@ -258,19 +269,40 @@ export default function FoodScanner() {
                   className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center p-12 text-center"
                 >
                   <div className="p-10 rounded-[3rem] bg-black/40 backdrop-blur-xl border border-white/10 space-y-6 max-w-sm">
-                    <div className="h-16 w-16 bg-primary rounded-2xl mx-auto flex items-center justify-center text-black shadow-2xl neon-glow">
-                       <TrendingUp size={32} />
-                    </div>
-                    <h3 className="text-2xl font-black italic uppercase tracking-tighter text-white">Visual Capture Lock</h3>
-                    <p className="text-white/40 text-sm font-medium">Frame synchronized. Execute deep molecular indexing?</p>
-                    <div className="flex gap-4">
-                      <Button onClick={() => setImage(null)} variant="ghost" className="h-16 px-6 rounded-2xl font-black uppercase italic tracking-widest text-[10px]">
-                        Discard
-                      </Button>
-                      <Button onClick={scanFood} className="flex-1 h-16 bg-primary text-black font-black uppercase italic tracking-tighter text-lg rounded-2xl shadow-2xl neon-glow">
-                        Analyze
-                      </Button>
-                    </div>
+                    {geminiRequired ? (
+                      // Gemini not configured — show clear message
+                      <>
+                        <div className="h-16 w-16 bg-yellow-500/20 rounded-2xl mx-auto flex items-center justify-center text-yellow-400 shadow-2xl">
+                          <KeyRound size={32} />
+                        </div>
+                        <h3 className="text-2xl font-black italic uppercase tracking-tighter text-white">Gemini Key Required</h3>
+                        <p className="text-white/50 text-sm font-medium leading-relaxed">
+                          Food scanning uses Google Gemini Vision AI.<br/>
+                          Add <code className="text-yellow-400 bg-black/40 px-1 rounded">GEMINI_API_KEY</code> to your <code className="text-yellow-400 bg-black/40 px-1 rounded">.env</code> file and restart the server.
+                        </p>
+                        <p className="text-white/30 text-xs">ML features (BMI, calories, workouts) work without a Gemini key.</p>
+                        <Button onClick={() => setImage(null)} variant="ghost" className="h-12 px-6 rounded-2xl font-black uppercase italic tracking-widest text-[10px]">
+                          Back
+                        </Button>
+                      </>
+                    ) : (
+                      // Normal analyze flow
+                      <>
+                        <div className="h-16 w-16 bg-primary rounded-2xl mx-auto flex items-center justify-center text-black shadow-2xl neon-glow">
+                          <TrendingUp size={32} />
+                        </div>
+                        <h3 className="text-2xl font-black italic uppercase tracking-tighter text-white">Visual Capture Lock</h3>
+                        <p className="text-white/40 text-sm font-medium">Frame synchronized. Execute deep molecular indexing?</p>
+                        <div className="flex gap-4">
+                          <Button onClick={() => setImage(null)} variant="ghost" className="h-16 px-6 rounded-2xl font-black uppercase italic tracking-widest text-[10px]">
+                            Discard
+                          </Button>
+                          <Button onClick={scanFood} className="flex-1 h-16 bg-primary text-black font-black uppercase italic tracking-tighter text-lg rounded-2xl shadow-2xl neon-glow">
+                            Analyze
+                          </Button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </motion.div>
               )}
