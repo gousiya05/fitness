@@ -23,7 +23,9 @@ dotenv.config();
 
 const JWT_SECRET = process.env.JWT_SECRET || "flexai-secret-key-2026";
 const USE_MONGODB = !!process.env.MONGODB_URI;
-const ML_BACKEND_URL = process.env.ML_BACKEND_URL || "http://localhost:8000";
+// Use 127.0.0.1 explicitly — on Windows, Node 18+ resolves 'localhost' to ::1 (IPv6)
+// but FastAPI binds to 0.0.0.0 (IPv4 only), causing ECONNREFUSED on the proxy.
+const ML_BACKEND_URL = process.env.ML_BACKEND_URL || "http://127.0.0.1:8000";
 
 if (USE_MONGODB) {
   mongoose.connect(process.env.MONGODB_URI as string)
