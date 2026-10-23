@@ -677,13 +677,16 @@ try:
     from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
     from sklearn.ensemble import (
         RandomForestClassifier, RandomForestRegressor,
-        GradientBoostingRegressor, GradientBoostingClassifier
+        GradientBoostingRegressor, GradientBoostingClassifier,
+        AdaBoostClassifier, ExtraTreesClassifier,
+        VotingClassifier, StackingClassifier
     )
     from sklearn.neighbors import KNeighborsClassifier
     from sklearn.svm import SVC
-    from sklearn.naive_bayes import GaussianNB
+    from sklearn.naive_bayes import GaussianNB, MultinomialNB, BernoulliNB
+    from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
     from sklearn.model_selection import train_test_split
-    from sklearn.preprocessing import StandardScaler, LabelEncoder
+    from sklearn.preprocessing import StandardScaler, MinMaxScaler, LabelEncoder
     from sklearn.pipeline import Pipeline
     from sklearn.metrics import (
         accuracy_score, precision_score, recall_score, f1_score,
@@ -695,6 +698,32 @@ try:
 except ImportError as e:
     ML_LAB_AVAILABLE = False
     log.warning(f"  ML Lab unavailable: {e}")
+
+# Optional ML packages — report availability honestly
+try:
+    import xgboost as xgb
+    XGBOOST_AVAILABLE = True
+    log.info("  XGBoost available.")
+except ImportError:
+    XGBOOST_AVAILABLE = False
+    log.warning("  XGBoost not installed — xgboost algorithm will return 503.")
+
+try:
+    import lightgbm as lgb
+    LIGHTGBM_AVAILABLE = True
+    log.info("  LightGBM available.")
+except ImportError:
+    LIGHTGBM_AVAILABLE = False
+    log.warning("  LightGBM not installed — lightgbm algorithm will return 503.")
+
+try:
+    import catboost  # noqa: F401
+    from catboost import CatBoostClassifier
+    CATBOOST_AVAILABLE = True
+    log.info("  CatBoost available.")
+except ImportError:
+    CATBOOST_AVAILABLE = False
+    log.warning("  CatBoost not installed — catboost algorithm will return 503.")
 
 # ── In-memory trained model registry ──────────────────────────────────────
 _lab_models: Dict[str, Dict] = {}
@@ -766,8 +795,15 @@ def _load_dataset(name: str) -> Dict:
         raise HTTPException(404, f"Dataset '{name}' not found.")
 
 
+# Algorithms that require non-negative features — MinMaxScaler instead of StandardScaler
+_NON_NEGATIVE_ALGOS = {"multinomial_nb", "bernoulli_nb"}
+
+
 def _build_model(algorithm: str, task: str, hyperparams: Dict) -> Any:
-    """Instantiate a scikit-learn model by algorithm name."""
+    """Instantiate a scikit-learn model by algorithm name.
+    Raises HTTPException(503) for optional packages that are not installed.
+    Raises HTTPException(400) for unknown algorithm names.
+    """
     hp = hyperparams or {}
     if task == "classification":
         if algorithm == "logistic_regression":
@@ -800,13 +836,101 @@ def _build_model(algorithm: str, task: str, hyperparams: Dict) -> Any:
                 probability=True, random_state=42
             )
         elif algorithm == "naive_bayes":
-            return GaussianNB()
+            return GaussianNB(
+                var_smoothing=float(hp.get("var_smoothing", 1e-9))
+            )
+        elif algorithm == "multinomial_nb":
+            return MultinomialNB(
+                alpha=float(hp.get("alpha", 1.0))
+            )
+        elif algorithm == "bernoulli_nb":
+            return BernoulliNB(
+                alpha=float(hp.get("alpha", 1.0)),
+                binarize=float(hp.get("binarize", 0.0))
+            )
         elif algorithm == "gradient_boosting":
             return GradientBoostingClassifier(
                 n_estimators=int(hp.get("n_estimators", 100)),
                 learning_rate=float(hp.get("learning_rate", 0.1)),
                 max_depth=int(hp.get("max_depth", 3)),
                 random_state=42
+            )
+        elif algorithm == "adaboost":
+            return AdaBoostClassifier(
+                n_estimators=int(hp.get("n_estimators", 50)),
+                learning_rate=float(hp.get("learning_rate", 1.0)),
+                random_state=42
+            )
+        elif algorithm == "extra_trees":
+            return ExtraTreesClassifier(
+                n_estimators=int(hp.get("n_estimators", 100)),
+                max_depth=int(hp.get("max_depth", 0)) or None,
+                random_state=42, n_jobs=-1
+            )
+        elif algorithm == "lda":
+            return LinearDiscriminantAnalysis(
+                solver=hp.get("solver", "svd")
+            )
+        elif algorithm == "qda":
+            return QuadraticDiscriminantAnalysis(
+                reg_param=float(hp.get("reg_param", 0.0))
+            )
+        elif algorithm == "stacking":
+            # Stacking: LR + RF + SVM with LR as meta-learner
+            base = [
+                ("lr",  LogisticRegression(max_iter=500, random_state=42)),
+                ("rf",  RandomForestClassifier(n_estimators=50, random_state=42, n_jobs=-1)),
+                ("svm", SVC(probability=True, random_state=42)),
+            ]
+            return StackingClassifier(
+                estimators=base,
+                final_estimator=LogisticRegression(max_iter=500, random_state=42),
+                cv=int(hp.get("cv", 5)),
+                n_jobs=-1
+            )
+        elif algorithm == "voting":
+            # Soft-voting ensemble: LR + RF + KNN + NB
+            estimators = [
+                ("lr",  LogisticRegression(max_iter=500, random_state=42)),
+                ("rf",  RandomForestClassifier(n_estimators=50, random_state=42, n_jobs=-1)),
+                ("knn", KNeighborsClassifier(n_neighbors=5)),
+                ("nb",  GaussianNB()),
+            ]
+            return VotingClassifier(
+                estimators=estimators,
+                voting=hp.get("voting", "soft")
+            )
+        elif algorithm == "xgboost":
+            if not XGBOOST_AVAILABLE:
+                raise HTTPException(503, "XGBoost is not installed on this server. Run: pip install xgboost")
+            return xgb.XGBClassifier(
+                n_estimators=int(hp.get("n_estimators", 100)),
+                learning_rate=float(hp.get("learning_rate", 0.1)),
+                max_depth=int(hp.get("max_depth", 6)),
+                use_label_encoder=False,
+                eval_metric="mlogloss",
+                random_state=42,
+                verbosity=0
+            )
+        elif algorithm == "lightgbm":
+            if not LIGHTGBM_AVAILABLE:
+                raise HTTPException(503, "LightGBM is not installed on this server. Run: pip install lightgbm")
+            return lgb.LGBMClassifier(
+                n_estimators=int(hp.get("n_estimators", 100)),
+                learning_rate=float(hp.get("learning_rate", 0.1)),
+                max_depth=int(hp.get("max_depth", -1)),
+                random_state=42,
+                verbose=-1
+            )
+        elif algorithm == "catboost":
+            if not CATBOOST_AVAILABLE:
+                raise HTTPException(503, "CatBoost is not installed on this server. Run: pip install catboost")
+            return CatBoostClassifier(
+                iterations=int(hp.get("iterations", 100)),
+                learning_rate=float(hp.get("learning_rate", 0.1)),
+                depth=int(hp.get("depth", 6)),
+                random_seed=42,
+                verbose=0
             )
     elif task == "regression":
         if algorithm == "linear_regression":
@@ -830,6 +954,16 @@ def _build_model(algorithm: str, task: str, hyperparams: Dict) -> Any:
                 learning_rate=float(hp.get("learning_rate", 0.1)),
                 max_depth=int(hp.get("max_depth", 3)),
                 random_state=42
+            )
+        elif algorithm == "xgboost":
+            if not XGBOOST_AVAILABLE:
+                raise HTTPException(503, "XGBoost is not installed on this server. Run: pip install xgboost")
+            return xgb.XGBRegressor(
+                n_estimators=int(hp.get("n_estimators", 100)),
+                learning_rate=float(hp.get("learning_rate", 0.1)),
+                max_depth=int(hp.get("max_depth", 6)),
+                random_state=42,
+                verbosity=0
             )
     raise HTTPException(400, f"Unknown algorithm '{algorithm}' for task '{task}'.")
 
@@ -893,22 +1027,35 @@ async def lab_dataset_info(name: str):
 
 @app.get("/lab/algorithms", summary="List available ML algorithms")
 async def lab_algorithms():
+    clf_list = [
+        {"id": "logistic_regression", "name": "Logistic Regression",         "hyperparams": ["C", "max_iter"],                            "available": True},
+        {"id": "knn",                 "name": "K-Nearest Neighbors",          "hyperparams": ["n_neighbors", "weights"],                  "available": True},
+        {"id": "svm",                 "name": "Support Vector Machine",       "hyperparams": ["C", "kernel"],                             "available": True},
+        {"id": "decision_tree",       "name": "Decision Tree",                "hyperparams": ["max_depth", "min_samples_split"],           "available": True},
+        {"id": "random_forest",       "name": "Random Forest",                "hyperparams": ["n_estimators", "max_depth"],                "available": True},
+        {"id": "naive_bayes",         "name": "Gaussian Naive Bayes",         "hyperparams": ["var_smoothing"],                           "available": True},
+        {"id": "multinomial_nb",      "name": "Multinomial Naive Bayes",      "hyperparams": ["alpha"],                                    "available": True,  "note": "Uses MinMaxScaler (non-negative features)"},
+        {"id": "bernoulli_nb",        "name": "Bernoulli Naive Bayes",        "hyperparams": ["alpha", "binarize"],                        "available": True,  "note": "Uses MinMaxScaler (non-negative features)"},
+        {"id": "adaboost",            "name": "AdaBoost Classifier",          "hyperparams": ["n_estimators", "learning_rate"],            "available": True},
+        {"id": "gradient_boosting",   "name": "Gradient Boosting Classifier","hyperparams": ["n_estimators", "learning_rate", "max_depth"],"available": True},
+        {"id": "extra_trees",         "name": "Extra Trees Classifier",       "hyperparams": ["n_estimators", "max_depth"],                "available": True},
+        {"id": "lda",                 "name": "Linear Discriminant Analysis", "hyperparams": ["solver"],                                   "available": True},
+        {"id": "qda",                 "name": "Quadratic Discriminant Analysis","hyperparams": ["reg_param"],                              "available": True},
+        {"id": "stacking",            "name": "Stacking Classifier",          "hyperparams": ["cv"],                                       "available": True,  "note": "LR+RF+SVM base with LR meta-learner"},
+        {"id": "voting",              "name": "Voting Classifier",            "hyperparams": ["voting"],                                   "available": True,  "note": "Soft-voting: LR+RF+KNN+NB"},
+        {"id": "xgboost",             "name": "XGBoost Classifier",           "hyperparams": ["n_estimators", "learning_rate", "max_depth"],"available": XGBOOST_AVAILABLE,  "note": None if XGBOOST_AVAILABLE else "pip install xgboost"},
+        {"id": "lightgbm",            "name": "LightGBM Classifier",          "hyperparams": ["n_estimators", "learning_rate", "max_depth"],"available": LIGHTGBM_AVAILABLE, "note": None if LIGHTGBM_AVAILABLE else "pip install lightgbm"},
+        {"id": "catboost",            "name": "CatBoost Classifier",          "hyperparams": ["iterations", "learning_rate", "depth"],      "available": CATBOOST_AVAILABLE,  "note": None if CATBOOST_AVAILABLE else "pip install catboost"},
+    ]
     return {
-        "classification": [
-            {"id": "logistic_regression", "name": "Logistic Regression",     "hyperparams": ["C", "max_iter"]},
-            {"id": "decision_tree",       "name": "Decision Tree",           "hyperparams": ["max_depth", "min_samples_split"]},
-            {"id": "random_forest",       "name": "Random Forest",           "hyperparams": ["n_estimators", "max_depth"]},
-            {"id": "knn",                 "name": "K-Nearest Neighbors",     "hyperparams": ["n_neighbors", "weights"]},
-            {"id": "svm",                 "name": "Support Vector Machine",  "hyperparams": ["C", "kernel"]},
-            {"id": "naive_bayes",         "name": "Gaussian Naive Bayes",    "hyperparams": []},
-            {"id": "gradient_boosting",   "name": "Gradient Boosting",       "hyperparams": ["n_estimators", "learning_rate", "max_depth"]},
-        ],
+        "classification": clf_list,
         "regression": [
-            {"id": "linear_regression",  "name": "Linear Regression",       "hyperparams": []},
-            {"id": "ridge",              "name": "Ridge Regression",        "hyperparams": ["alpha"]},
-            {"id": "decision_tree",      "name": "Decision Tree Regressor", "hyperparams": ["max_depth"]},
-            {"id": "random_forest",      "name": "Random Forest Regressor", "hyperparams": ["n_estimators", "max_depth"]},
-            {"id": "gradient_boosting",  "name": "Gradient Boosting",       "hyperparams": ["n_estimators", "learning_rate", "max_depth"]},
+            {"id": "linear_regression",  "name": "Linear Regression",       "hyperparams": [],                                             "available": True},
+            {"id": "ridge",              "name": "Ridge Regression",        "hyperparams": ["alpha"],                                       "available": True},
+            {"id": "decision_tree",      "name": "Decision Tree Regressor", "hyperparams": ["max_depth"],                                   "available": True},
+            {"id": "random_forest",      "name": "Random Forest Regressor", "hyperparams": ["n_estimators", "max_depth"],                   "available": True},
+            {"id": "gradient_boosting",  "name": "Gradient Boosting",       "hyperparams": ["n_estimators", "learning_rate", "max_depth"],  "available": True},
+            {"id": "xgboost",            "name": "XGBoost Regressor",        "hyperparams": ["n_estimators", "learning_rate", "max_depth"],  "available": XGBOOST_AVAILABLE, "note": None if XGBOOST_AVAILABLE else "pip install xgboost"},
         ]
     }
 
@@ -929,8 +1076,13 @@ async def lab_train(req: TrainRequest):
 
         estimator = _build_model(req.algorithm, task, req.hyperparams)
 
+        # MultinomialNB and BernoulliNB require non-negative features: use MinMaxScaler.
+        # LDA/QDA and tree-based models don't need scaling but it doesn't hurt.
         if req.scale_features:
-            pipeline = Pipeline([("scaler", StandardScaler()), ("model", estimator)])
+            if req.algorithm in _NON_NEGATIVE_ALGOS:
+                pipeline = Pipeline([("scaler", MinMaxScaler()), ("model", estimator)])
+            else:
+                pipeline = Pipeline([("scaler", StandardScaler()), ("model", estimator)])
         else:
             pipeline = Pipeline([("model", estimator)])
 

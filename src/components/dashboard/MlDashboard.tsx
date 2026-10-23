@@ -16,11 +16,16 @@ import {
   type CaloriePredictionResponse, type WorkoutResponse,
 } from '@/services/mlApiService';
 
-const ML_API = import.meta.env.VITE_ML_API_URL || 'http://localhost:8000';
+// Route all lab calls through the Express proxy (/api/ml) — same as mlApiService.ts.
+// This works on Vercel (Express serverless), local dev (Vite proxy), and direct mode
+// (set VITE_ML_API_URL=http://localhost:8000 to bypass proxy if needed).
+const ML_API_BASE = import.meta.env.VITE_ML_API_URL
+  ? `${import.meta.env.VITE_ML_API_URL}`
+  : '/api/ml';
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 async function labFetch<T>(path: string, opts?: RequestInit): Promise<T> {
-  const r = await fetch(`${ML_API}${path}`, {
+  const r = await fetch(`${ML_API_BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...opts,
   });
@@ -33,7 +38,7 @@ async function labFetch<T>(path: string, opts?: RequestInit): Promise<T> {
 
 // ─── types ─────────────────────────────────────────────────────────────────
 interface Dataset { id: string; name: string; task: string; samples: number; features: number }
-interface Algorithm { id: string; name: string; hyperparams: string[] }
+interface Algorithm { id: string; name: string; hyperparams: string[]; available?: boolean; note?: string | null }
 interface TrainResult {
   model_id: string; dataset: string; algorithm: string; task: string;
   metrics: Record<string, any>; train_samples: number; test_samples: number;
@@ -553,17 +558,30 @@ export default function MlDashboard() {
                     <select value={selectedAlgo} onChange={e => setSelectedAlgo(e.target.value)}
                       className="w-full h-10 rounded-xl bg-black/40 border border-white/10 px-3 text-white font-bold text-sm focus:border-purple-500/40 focus:outline-none">
                       {currentAlgos.length > 0 ? currentAlgos.map(a => (
-                        <option key={a.id} value={a.id}>{a.name}</option>
+                        <option key={a.id} value={a.id} disabled={a.available === false}>
+                          {a.name}{a.available === false ? ' (not installed)' : ''}
+                        </option>
                       )) : (
                         currentTask === 'classification' ? (
                           <>
                             <option value="logistic_regression">Logistic Regression</option>
-                            <option value="decision_tree">Decision Tree</option>
-                            <option value="random_forest">Random Forest</option>
                             <option value="knn">K-Nearest Neighbors</option>
                             <option value="svm">Support Vector Machine</option>
+                            <option value="decision_tree">Decision Tree</option>
+                            <option value="random_forest">Random Forest</option>
                             <option value="naive_bayes">Gaussian Naive Bayes</option>
-                            <option value="gradient_boosting">Gradient Boosting</option>
+                            <option value="multinomial_nb">Multinomial Naive Bayes</option>
+                            <option value="bernoulli_nb">Bernoulli Naive Bayes</option>
+                            <option value="adaboost">AdaBoost Classifier</option>
+                            <option value="gradient_boosting">Gradient Boosting Classifier</option>
+                            <option value="extra_trees">Extra Trees Classifier</option>
+                            <option value="lda">Linear Discriminant Analysis</option>
+                            <option value="qda">Quadratic Discriminant Analysis</option>
+                            <option value="stacking">Stacking Classifier</option>
+                            <option value="voting">Voting Classifier</option>
+                            <option value="xgboost">XGBoost Classifier</option>
+                            <option value="lightgbm" disabled>LightGBM (not installed)</option>
+                            <option value="catboost" disabled>CatBoost (not installed)</option>
                           </>
                         ) : (
                           <>
@@ -572,6 +590,7 @@ export default function MlDashboard() {
                             <option value="decision_tree">Decision Tree Regressor</option>
                             <option value="random_forest">Random Forest Regressor</option>
                             <option value="gradient_boosting">Gradient Boosting</option>
+                            <option value="xgboost">XGBoost Regressor</option>
                           </>
                         )
                       )}
@@ -582,20 +601,35 @@ export default function MlDashboard() {
                   <div>
                     <label className="text-[9px] font-black uppercase tracking-widest text-white/30 block mb-2">Hyperparameters</label>
                     <div className="space-y-2">
-                      {['n_estimators', 'max_depth', 'n_neighbors', 'C', 'alpha', 'learning_rate'].map(key => {
+                      {['n_estimators', 'max_depth', 'n_neighbors', 'C', 'alpha', 'learning_rate', 'cv', 'voting', 'solver', 'reg_param', 'iterations', 'depth'].map(key => {
                         const algoObj = currentAlgos.find(a => a.id === selectedAlgo);
-                        const show = !algoObj || algoObj.hyperparams.includes(key);
+                        // Show param if: algo loaded from backend (check hyperparams list), or fallback whitelist
+                        const show = algoObj
+                          ? algoObj.hyperparams.includes(key)
+                          : ['n_estimators', 'max_depth', 'n_neighbors', 'C', 'alpha', 'learning_rate'].includes(key);
                         if (!show) return null;
+                        const placeholders: Record<string,string> = {
+                          n_estimators: '100', max_depth: '5', n_neighbors: '5',
+                          C: '1.0', alpha: '1.0', learning_rate: '0.1',
+                          cv: '5', voting: 'soft', solver: 'svd',
+                          reg_param: '0.0', iterations: '100', depth: '6'
+                        };
                         return (
                           <div key={key} className="flex items-center gap-2">
                             <label className="text-[9px] font-bold text-white/30 w-32 uppercase">{key}</label>
                             <input type="text" value={hyperparams[key] ?? ''} onChange={e => setHyperparams(h => ({ ...h, [key]: e.target.value }))}
-                              placeholder={key === 'n_estimators' ? '100' : key === 'max_depth' ? '5' : key === 'C' ? '1.0' : '0.1'}
+                              placeholder={placeholders[key] || ''}
                               className="flex-1 h-8 rounded-lg bg-black/40 border border-white/10 px-3 text-white font-bold text-xs focus:border-purple-500/40 focus:outline-none" />
                           </div>
                         );
                       })}
                     </div>
+                    {/* Show note (e.g. MinMaxScaler) for special algorithms */}
+                    {currentAlgos.find(a => a.id === selectedAlgo)?.note && (
+                      <div className="mt-2 text-[9px] text-amber-400/70 font-bold">
+                        ⚠ {currentAlgos.find(a => a.id === selectedAlgo)?.note}
+                      </div>
+                    )}
                   </div>
 
                   {/* Split */}
