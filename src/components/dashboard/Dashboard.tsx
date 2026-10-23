@@ -1,29 +1,9 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Flame, 
-  Timer, 
-  TrendingUp, 
-  Trophy, 
-  ArrowRight, 
-  Play, 
-  Zap, 
-  ShieldCheck, 
-  Activity, 
-  Target,
-  ChevronRight,
-  BrainCircuit,
-  Medal,
-  Dumbbell,
-  Utensils,
-  Loader2
+import { motion } from 'motion/react';
+import {
+  Flame, Timer, TrendingUp, Zap, ShieldCheck, Activity, Target,
+  ChevronRight, BrainCircuit, Medal, Dumbbell, Utensils, Loader2, Footprints
 } from 'lucide-react';
-
-  // Replace onClick handlers:
-  // In Active Fuel Protocol button:
-  // onClick={() => navigate('/diet')}
-  // In Neural Training Protocol button:
-  // onClick={() => navigate('/fitness')}
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -72,12 +52,54 @@ const achievements = [
   { id: 3, title: 'Flame On', desc: '7 day calorie streak', icon: Flame, color: 'text-orange-600' },
 ];
 
+// ── Step tracker helpers ────────────────────────────────────
+const STEPS_KEY = 'dailySteps';
+const STEPS_DATE_KEY = 'dailyStepsDate';
+const STEPS_GOAL = 10000;
+
+function getTodayDate() {
+  return new Date().toDateString(); // e.g. "Thu Oct 23 2026"
+}
+
+function loadSteps(): number {
+  const savedDate = localStorage.getItem(STEPS_DATE_KEY);
+  if (savedDate !== getTodayDate()) {
+    // New day — reset
+    localStorage.setItem(STEPS_DATE_KEY, getTodayDate());
+    localStorage.setItem(STEPS_KEY, '0');
+    return 0;
+  }
+  return parseInt(localStorage.getItem(STEPS_KEY) || '0', 10);
+}
+
+function saveSteps(steps: number) {
+  localStorage.setItem(STEPS_DATE_KEY, getTodayDate());
+  localStorage.setItem(STEPS_KEY, String(steps));
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [profile, setProfile] = React.useState<UserProfile | null>(null);
   const [metrics, setMetrics] = React.useState<BodyMetrics | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [progressData, setProgressData] = React.useState<any[]>([]);
+  const [steps, setSteps] = React.useState<number>(0);
+  const [streak, setStreak] = React.useState<number>(0);
+
+  // Load steps & streak on mount
+  React.useEffect(() => {
+    setSteps(loadSteps());
+    // Streak = unique days in calorie history
+    const history: any[] = JSON.parse(localStorage.getItem('calorieHistory') || '[]');
+    const uniqueDays = new Set(history.map((h: any) => h.day || h.ts)).size;
+    setStreak(Math.max(uniqueDays, history.length > 0 ? 1 : 0));
+  }, []);
+
+  const addSteps = (n: number) => {
+    const newVal = steps + n;
+    setSteps(newVal);
+    saveSteps(newVal);
+  };
 
   React.useEffect(() => {
     const fetchProfile = async () => {
@@ -144,9 +166,9 @@ export default function Dashboard() {
   }
 
   const stats = [
-    { label: 'Body Mass Index', val: progressData.length > 0 ? progressData[progressData.length - 1].bmi.toFixed(1) : (metrics?.bmi || '24.2'), icon: Activity, sub: 'HEALTH_INDEX', color: 'text-primary' },
-    { label: 'Energy Expenditure', val: metrics ? `${metrics.tdee}` : '2.4k', unit: 'KCAL', icon: Flame, sub: 'Daily Target', color: 'text-orange-500' },
-    { label: 'Mass Goal', val: profile ? (profile.fitnessGoal === 'muscle_gain' ? 'Gain' : profile.fitnessGoal === 'fat_loss' ? 'Shred' : 'Stasis') : 'Cut', icon: TrendingUp, sub: 'Objective', color: 'text-blue-500' },
+    { label: 'Body Mass Index', val: progressData.length > 0 ? progressData[progressData.length - 1].bmi?.toFixed(1) : (metrics?.bmi || '—'), icon: Activity, sub: 'HEALTH_INDEX', color: 'text-primary' },
+    { label: 'Energy Expenditure', val: metrics ? `${metrics.tdee}` : '—', unit: 'KCAL', icon: Flame, sub: 'Daily Target', color: 'text-orange-500' },
+    { label: 'Daily Steps', val: steps.toLocaleString(), unit: `/${(STEPS_GOAL/1000).toFixed(0)}k`, icon: Footprints, sub: `${Math.round((steps/STEPS_GOAL)*100)}% of goal`, color: 'text-green-500' },
     { label: 'Hydration Target', val: metrics?.water || '3.5', unit: 'LITERS', icon: Target, sub: 'Optimal Fluid', color: 'text-cyan-500' },
   ];
 
@@ -200,15 +222,34 @@ export default function Dashboard() {
               <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
                 <ShieldCheck size={100} className="-rotate-12" />
               </div>
-              <div className="text-[10px] font-black uppercase text-primary mb-2 tracking-[0.3em]">Neural Streak</div>
+              <div className="text-[10px] font-black uppercase text-primary mb-2 tracking-[0.3em]">Calorie Streak</div>
               <div className="flex items-end gap-3">
-                 <span className="text-6xl font-black italic tracking-tighter">14</span>
+                 <span className="text-6xl font-black italic tracking-tighter">{streak}</span>
                  <span className="text-xs font-black text-white/30 pb-2">DAYS</span>
               </div>
-              <div className="mt-6 flex gap-1.5">
+              <div className="mt-4 flex gap-1.5">
                  {[1,2,3,4,5,6,7].map(i => (
-                   <div key={i} className={cn("h-1.5 w-full rounded-full transition-colors", i < 6 ? "bg-primary shadow-[0_0_10px_rgba(234,88,12,0.5)]" : "bg-white/5")} />
+                   <div key={i} className={cn("h-1.5 w-full rounded-full transition-colors", i <= Math.min(streak, 7) ? "bg-primary shadow-[0_0_10px_rgba(234,88,12,0.5)]" : "bg-white/5")} />
                  ))}
+              </div>
+              {/* Step counter quick-add */}
+              <div className="mt-4 pt-4 border-t border-white/5">
+                <div className="text-[9px] font-black uppercase text-white/20 tracking-widest mb-2">Today's Steps</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-black italic">{steps.toLocaleString()}</span>
+                  <div className="flex gap-1 ml-auto">
+                    {[500, 1000, 2000].map(n => (
+                      <button key={n} onClick={() => addSteps(n)}
+                        className="text-[8px] font-black uppercase px-2 py-1 rounded-lg bg-white/5 hover:bg-primary/20 hover:text-primary border border-white/5 transition-all">
+                        +{n >= 1000 ? `${n/1000}k` : n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-2 h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                  <div className="h-full bg-green-500 rounded-full transition-all duration-700"
+                    style={{ width: `${Math.min((steps / STEPS_GOAL) * 100, 100)}%` }} />
+                </div>
               </div>
            </Card>
         </div>
